@@ -1,0 +1,83 @@
+{
+  "screens": [
+    {
+      "SCRID": 101,
+      "key": "malKabul",
+      "title": "Mal Kabul Girişi",
+      "fields": [
+        {
+          "COMPID": 1001,
+          "id": "cariKodu",
+          "label": "Cari Seçimi",
+          "type": "search",
+          "placeholder": "Cari seçmek için dokunun...",
+          "visibilityCondition": "always",
+          "order": 1,
+          "guideType": "cari",
+          "SectionGroup": "HEADER"
+        },
+        {
+          "COMPID": 1002,
+          "id": "irsaliyeNo",
+          "label": "İrsaliye Numarası",
+          "type": "text",
+          "placeholder": "Maksimum 15 karakter",
+          "maxLength": 15,
+          "visibilityCondition": "always",
+          "order": 2,
+          "SectionGroup": "HEADER"
+        },
+        {
+          "COMPID": 1003,
+          "id": "irsaliyeTarihi",
+          "label": "İrsaliye Tarihi",
+          "type": "date",
+          "visibilityCondition": "always",
+          "order": 3,
+          "SectionGroup": "HEADER"
+        },
+        {
+          "COMPID": 1004,
+          "id": "stokKodu",
+          "label": "Ürün Seçimi / Barkod",
+          "type": "search",
+          "placeholder": "Ürün seçin veya barkod okutun...",
+          "visibilityCondition": "always",
+          "order": 4,
+          "guideType": "stok",
+          "SectionGroup": "LINE"
+        },
+        {
+          "COMPID": 1005,
+          "id": "miktar",
+          "label": "Miktar",
+          "type": "decimal",
+          "placeholder": "0.00",
+          "visibilityCondition": "always",
+          "order": 5,
+          "SectionGroup": "LINE"
+        },
+        {
+          "COMPID": 1006,
+          "id": "olcuBirimi",
+          "label": "Ölçü Birimi",
+          "type": "readonly",
+          "placeholder": "Birim...",
+          "visibilityCondition": "always",
+          "order": 6,
+          "SectionGroup": "LINE"
+        },
+        {
+          "COMPID": 1007,
+          "id": "lotNo",
+          "label": "Lot Numarası",
+          "type": "text",
+          "placeholder": "LOT...",
+          "visibilityCondition": "IsLotTrackingActive",
+          "order": 7,
+          "SectionGroup": "LINE"
+        }
+      ]
+    }
+  ]
+}

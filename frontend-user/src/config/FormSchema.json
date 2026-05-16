@@ -1,0 +1,62 @@
+{
+  "malKabul": [
+    {
+      "id": "cariKodu",
+      "label": "Cari Seçimi",
+      "type": "search",
+      "placeholder": "Cari seçmek için dokunun...",
+      "visibilityCondition": "always",
+      "order": 1,
+      "guideType": "cari"
+    },
+    {
+      "id": "irsaliyeNo",
+      "label": "İrsaliye Numarası",
+      "type": "text",
+      "placeholder": "Maksimum 15 karakter",
+      "maxLength": 15,
+      "visibilityCondition": "always",
+      "order": 2
+    },
+    {
+      "id": "irsaliyeTarihi",
+      "label": "İrsaliye Tarihi",
+      "type": "date",
+      "visibilityCondition": "always",
+      "order": 3
+    },
+    {
+      "id": "stokKodu",
+      "label": "Ürün Seçimi / Barkod",
+      "type": "search",
+      "placeholder": "Ürün seçin veya barkod okutun...",
+      "visibilityCondition": "always",
+      "order": 4,
+      "guideType": "stok"
+    },
+    {
+      "id": "miktar",
+      "label": "Miktar",
+      "type": "decimal",
+      "placeholder": "0.00",
+      "visibilityCondition": "always",
+      "order": 5
+    },
+    {
+      "id": "olcuBirimi",
+      "label": "Ölçü Birimi",
+      "type": "readonly",
+      "placeholder": "Birim...",
+      "visibilityCondition": "always",
+      "order": 6
+    },
+    {
+      "id": "lotNo",
+      "label": "Lot Numarası",
+      "type": "text",
+      "placeholder": "LOT...",
+      "visibilityCondition": "lotTakibiVarMi",
+      "order": 7
+    }
+  ]
+}

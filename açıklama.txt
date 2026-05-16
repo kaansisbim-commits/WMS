@@ -1,0 +1,22 @@
+Yeni Yapı ve Özellikler:
+Ayrıştırılmış Portallar:
+WMS Mobil Uygulama (frontend-user): Port 5173. Son kullanıcıların (depo personeli) kullandığı arayüz.
+Yönetim Portalı (frontend-admin): Port 5174. Sadece yöneticilerin kullanıcı açtığı ve ekran tasarladığı arayüz.
+Kullanıcı ve Yetki Yönetimi (Admin Panel):
+Yeni bir Kullanıcı Yönetimi ekranı eklendi.
+Buradan yeni kullanıcılar tanımlayabilir, şifre belirleyebilir ve sayfa bazlı yetkilendirme yapabilirsiniz.
+Örneğin; "Kaan" isimli kullanıcıya sadece "Mal Kabul" yetkisi verirseniz, o kullanıcı mobil uygulamaya girdiğinde menüde "Stok Sayım" veya "Sevk" seçeneklerini görmeyecektir.
+Merkezi Ekran Tasarımcısı:
+Mobil uygulamanın form yapısını (alan sıralaması, isimler) artık sadece bu ayrı Yönetim Paneli üzerinden değiştirebilirsiniz.
+Backend Entegrasyonu:
+Tüm kullanıcı ve yetki verileri Backend tarafında merkezi olarak yönetiliyor.
+Nasıl Çalıştırılır?
+Şimdi üç ayrı terminalde şu komutları çalıştırmanız gerekiyor:
+
+Terminal 1 (Backend): cd backend -> npm run start (Port 5000)
+Terminal 2 (Mobil Uygulama): cd frontend-user -> npm run dev (Port 5173)
+Terminal 3 (Yönetim Paneli): cd frontend-admin -> npm run dev (Port 5174)
+Giriş Bilgileri:
+Yönetim Paneli (localhost:5174): Admin / 123
+Mobil Uygulama (localhost:5173): Kaan / 111 (Bu kullanıcıya Admin panelinden yetki verebilirsiniz).
+Sistemi bu şekilde ayağa kaldırıp kullanıcı yetkilendirme testlerini yapabilirsiniz. Başka bir modül eklemek ister misiniz?

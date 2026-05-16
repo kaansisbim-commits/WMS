@@ -1,0 +1,45 @@
+{
+  "menuItems": [
+    {
+      "id": "dashboard",
+      "label": "Dashboard",
+      "icon": "DashboardIcon",
+      "path": "/",
+      "roles": ["admin", "user"]
+    },
+    {
+      "id": "mal-kabul",
+      "label": "Mal Kabul",
+      "icon": "InputIcon",
+      "path": "/mal-kabul",
+      "roles": ["admin", "user"],
+      "params": {
+        "showOrderField": "siparisliMalKabulZorunluMu"
+      }
+    },
+    {
+      "id": "depo-sevk",
+      "label": "Depolar Arası Sevk",
+      "icon": "TransferIcon",
+      "path": "/sevk",
+      "roles": ["admin", "user"]
+    },
+    {
+      "id": "sayim",
+      "label": "Stok Sayım",
+      "icon": "SearchIcon",
+      "path": "/sayim",
+      "roles": ["admin", "user"],
+      "params": {
+        "active": "stokSayimActive"
+      }
+    },
+    {
+      "id": "admin-portal",
+      "label": "Yönetim Paneli",
+      "icon": "SettingsIcon",
+      "path": "/admin",
+      "roles": ["admin"]
+    }
+  ]
+}
