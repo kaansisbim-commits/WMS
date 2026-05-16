@@ -42,17 +42,23 @@ const GuideModal = ({ isOpen, onClose, title, data, onSelect, displayType = 'CAR
                         <table className="user-table" style={{ width: '100%' }}>
                             <thead>
                                 <tr>
-                                    {filteredData.length > 0 && Object.keys(filteredData[0]).map(key => (
-                                        <th key={key}>{key}</th>
-                                    ))}
+                                    {filteredData.length > 0 && Object.keys(filteredData[0])
+                                        .filter(key => !key.startsWith('_'))
+                                        .map(key => (
+                                            <th key={key}>{key}</th>
+                                        ))
+                                    }
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredData.map((item, idx) => (
                                     <tr key={idx} onClick={() => onSelect(item)} style={{ cursor: 'pointer' }}>
-                                        {Object.values(item).map((val, i) => (
-                                            <td key={i}>{val}</td>
-                                        ))}
+                                        {Object.entries(item)
+                                            .filter(([key]) => !key.startsWith('_'))
+                                            .map(([key, val], i) => (
+                                                <td key={i}>{val}</td>
+                                            ))
+                                        }
                                     </tr>
                                 ))}
                             </tbody>

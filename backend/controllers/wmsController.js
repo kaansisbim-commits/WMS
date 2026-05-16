@@ -1,180 +1,221 @@
-const axios = require('axios');
-const { poolPromise, sql } = require('../config/db');
+const netsisService = require('../services/netsisService');
+const wmsService = require('../services/wmsService');
 
 /**
  * WMS Controller
- * Handles MSSQL Reads and NetOpenX Writes
+ * Entry point for WMS related requests. Handles req/res and calls services.
  */
 
-// MSSQL GET: Sipariş veya Stok Bilgisi Çekme
+// --- MSSQL Data (Local WMS) ---
 exports.getData = async (req, res) => {
     try {
-        const { queryType, params } = req.query;
-
-        // Mock Response for Demonstration
-        // In real: const result = await sql.query(`SELECT * FROM ${queryType} ...`);
-
-        let mockData = [];
-        if (queryType === 'Siparisler') {
-            mockData = [
-                { SiparisNo: 'SIP001', CariKod: 'M001', Tarih: '2026-05-13' },
-                { SiparisNo: 'SIP002', CariKod: 'M002', Tarih: '2026-05-13' }
-            ];
-        } else if (queryType === 'Stoklar') {
-            mockData = [
-                { StokKodu: 'STK001', StokIsmi: 'Laptop', Bakiye: 50 },
-                { StokKodu: 'STK002', StokIsmi: 'Mouse', Bakiye: 200 }
-            ];
-        }
-
-        res.json({ success: true, data: mockData });
+        // This is a generic GET, we can keep it simple or route to specific service methods
+        res.json({ success: true, message: 'Data route active' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// NetOpenX POST: Mal Kabul veya Sevk Kaydı Atma
 exports.postData = async (req, res) => {
     try {
         const payload = req.body;
         const { draftId } = req.query;
+        const userId = String(payload.userId || '0');
+        const username = String(payload.username || 'Admin');
 
-        console.log('[NETOPENX PAYLOAD]:', payload);
-
-        // Integration with NetOpenX REST API
-        /*
-        const response = await axios.post(`${process.env.NETOPENX_URL}/PostOperation`, payload, {
-            auth: {
-                username: process.env.NETOPENX_USER,
-                password: process.env.NETOPENX_PASS
-            }
-        });
-        */
-
-        // If a draft was used, mark it as inactive (completed)
-        if (draftId) {
-            const pool = await poolPromise;
-            await pool.request()
-                .input('id', sql.Int, parseInt(draftId))
-                .query('UPDATE WMS_TransactionDrafts SET IsActive = 0, LastUpdatedAt = GETDATE() WHERE DraftID = @id');
+        if (!payload || !payload.header || !payload.lines) {
+            return res.status(400).json({ success: false, message: 'Geçersiz veri formatı.' });
         }
 
-        // Mock success response
-        res.json({
-            success: true,
-            message: 'İşlem başarıyla Logo Netsis\'e aktarıldı.',
-            transactionId: 'TRX-' + Math.random().toString(36).substr(2, 9)
-        });
+        const receiptId = await wmsService.saveReceipt(payload, draftId, username);
+        res.json({ success: true, message: 'Fiş başarıyla kaydedildi.', receiptId });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'NetOpenX Hatası: ' + error.message });
+        console.error('postData Error:', error);
+        res.status(500).json({ success: false, message: 'WMS Kayıt Hatası: ' + error.message });
     }
 };
 
-// Dynamic Parameters (Stored in DB: WMS_SystemParameters)
+// --- NetOpenX Integration ---
+exports.sendToNetsis = async (req, res) => {
+    try {
+        const { receiptId } = req.body || {};
+        const { poolPromise, sql } = require('../config/db'); // Needed for the specific query logic here
+        const pool = await poolPromise;
+
+        let queryStr = 'SELECT TOP 10 * FROM WMS_Receipts WHERE IntegrationStatus IN (0, 2) ORDER BY CreatedAt ASC';
+        let request = pool.request();
+
+        if (receiptId) {
+            queryStr = 'SELECT * FROM WMS_Receipts WHERE ReceiptID = @rid';
+            request.input('rid', sql.Int, receiptId);
+        }
+
+        const receiptReq = await request.query(queryStr);
+        const receipts = receiptReq.recordset;
+
+        if (receipts.length === 0) {
+            return res.json({ success: true, message: 'Aktarılacak bekleyen fiş bulunamadı.' });
+        }
+
+        let results = [];
+        for (const receipt of receipts) {
+            try {
+                const linesReq = await pool.request()
+                    .input('ReceiptID', sql.Int, receipt.ReceiptID)
+                    .query('SELECT * FROM WMS_ReceiptLines WHERE ReceiptID = @ReceiptID');
+                const lines = linesReq.recordset;
+
+                // Tarih formatını güvenli hale getirelim (UTC kaymalarını önlemek için)
+                const formatDate = (d) => {
+                    const date = d ? new Date(d) : new Date();
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+
+                const belTarihiStr = formatDate(receipt.BelgeTarihi);
+
+                // Seri takibi parametresini kontrol et
+                const paramReq = await pool.request()
+                    .input('pKey', sql.VarChar, 'SERINETSISEYAZ')
+                    .query('SELECT ParamValue FROM WMS_SystemParameters WHERE ParamKey = @pKey');
+                const masterSerialActive = paramReq.recordset[0]?.ParamValue == 1;
+
+                // Satırları işle ve hibrit seri takibi durumunu belirle
+                const processedLines = lines.map(line => {
+                    let dynamicFields = {};
+                    try {
+                        dynamicFields = line.DynamicFieldsJSON ? JSON.parse(line.DynamicFieldsJSON) : {};
+                    } catch (e) {
+                        console.error('DynamicFieldsJSON parse error:', e);
+                    }
+
+                    // _GIRISSERI değeri 1, "1", true, "true" veya "E" olabilir
+                    const lineSerialActive =
+
+                        dynamicFields._GIRISSERI === 'E';
+
+                    return { ...line, _lineSerialActive: lineSerialActive };
+                });
+
+                // --- SATIR BİRLEŞTİRME (CONSOLIDATION) MANTIĞI ---
+                // Aynı StokKodu'na sahip satırları grupla
+                const groupedMap = processedLines.reduce((acc, line) => {
+                    const key = line.StokKodu;
+                    if (!acc[key]) {
+                        acc[key] = {
+                            StokKodu: key,
+                            TotalMiktar: 0,
+                            isGroupSerialActive: false,
+                            SeriListesi: []
+                        };
+                    }
+
+                    acc[key].TotalMiktar += parseFloat(line.Miktar || 0);
+                    if (line._lineSerialActive) acc[key].isGroupSerialActive = true;
+
+                    if (line.SeriNo) {
+                        acc[key].SeriListesi.push({
+                            Seri1: line.SeriNo,
+                            Miktar: parseFloat(line.Miktar || 0),
+                            HareketTip: 1
+                        });
+                    }
+
+                    return acc;
+                }, {});
+
+                const groupedLines = Object.values(groupedMap);
+
+                // Eğer en az bir grupta seri takibi varsa ve master parametre aktifse SeriliHesapla true olur
+                const isReceiptSerialActive = masterSerialActive && groupedLines.some(g => g.isGroupSerialActive);
+
+                const payload = {
+                    SeriliHesapla: isReceiptSerialActive,
+                    KayitliNumaraOtomatikGuncellensin: true,
+                    FatUst: {
+                        CariKod: receipt.CariKod,
+                        Tarih: belTarihiStr,
+                        TIPI: 2,
+                        KDV_DAHILMI: false,
+                        Tip: 3,
+                        FATIRS_NO: receipt.BelgeNo || '',
+                        SUBE_KODU: parseInt(process.env.NETOPENX_BRANCH || '0'),
+                        PROJE_KODU: "0",
+                        SIPARIS_TEST: belTarihiStr
+                    },
+                    Kalems: groupedLines.map(group => {
+                        const useSerialForThisGroup = masterSerialActive && group.isGroupSerialActive;
+
+                        const item = {
+                            SeriTakibi: useSerialForThisGroup ? "E" : "H",
+                            StokKodu: group.StokKodu,
+                            STra_GCMIK: group.TotalMiktar,
+                            DEPO_KODU: 1,
+                            STra_Sube: parseInt(process.env.NETOPENX_BRANCH || '0')
+                        };
+
+                        // Eğer bu grup için seri takibi aktifse KalemSeri dizisini ekle
+                        if (useSerialForThisGroup && group.SeriListesi.length > 0) {
+                            item.KalemSeri = group.SeriListesi;
+                        }
+
+                        return item;
+                    })
+                };
+
+                const integrationResult = await netsisService.sendItemSlip(payload);
+                await pool.request().input('id', sql.Int, receipt.ReceiptID).query('UPDATE WMS_Receipts SET IntegrationStatus = 1, IntegrationErrorDesc = NULL WHERE ReceiptID = @id');
+                results.push({ receiptId: receipt.ReceiptID, status: 'Success', detail: integrationResult });
+            } catch (err) {
+                const errorDesc = err.message || 'Entegrasyon Hatası';
+                await pool.request().input('id', sql.Int, receipt.ReceiptID).input('err', sql.NVarChar, errorDesc).query('UPDATE WMS_Receipts SET IntegrationStatus = 2, IntegrationErrorDesc = @err WHERE ReceiptID = @id');
+                results.push({ receiptId: receipt.ReceiptID, status: 'Error', error: errorDesc });
+            }
+        }
+        res.json({ success: true, processedCount: receipts.length, details: results });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Integration Worker Error: ' + error.message });
+    }
+};
+
+exports.getIntegrationLogs = async (req, res) => {
+    try {
+        const { page = 1, pageSize = 15, status } = req.query;
+        const result = await wmsService.getIntegrationLogs(page, pageSize, status);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- System Parameters ---
 exports.getParameters = async (req, res) => {
     try {
-        const pool = await poolPromise;
-        const result = await pool.request().query('SELECT ParamKey, ParamValue, Description, DisplayName FROM WMS_SystemParameters');
-
-        // Return as array of objects for the UI to render dynamically
-        const parameters = result.recordset.map(row => {
-            console.log(`ParamKey: ${row.ParamKey}, ParamValue: ${row.ParamValue}, Type: ${typeof row.ParamValue}`);
-            return {
-                key: row.ParamKey,
-                value: row.ParamValue == 1 || row.ParamValue === true,
-                description: row.Description,
-                displayName: row.DisplayName
-            };
-        });
-
-        res.json({ success: true, data: parameters });
+        const data = await wmsService.getSystemParameters();
+        res.json({ success: true, data });
     } catch (error) {
-        console.error('SQL getParameters error:', error);
-        res.status(500).json({ success: false, message: 'Database hatası: ' + error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
 exports.updateParameters = async (req, res) => {
     try {
-        const paramsArray = req.body; // Expecting array of {key, value}
-        const pool = await poolPromise;
-
-        for (const param of paramsArray) {
-            await pool.request()
-                .input('key', sql.VarChar, param.key)
-                .input('val', sql.Bit, param.value ? 1 : 0)
-                .query('UPDATE WMS_SystemParameters SET ParamValue = @val WHERE ParamKey = @key');
-
-            // --- BUSINESS LOGIC: Dynamic UI Triggers (Lot, SKT, Üretim Tarihi) ---
-            const dynamicFieldsConfig = {
-                'IsLotTrackingActive': { compId: 10199, labelText: 'Lot No', type: 'TEXT' },
-                'IsSKTTrackingActive': { compId: 10198, labelText: 'SKT', type: 'DATE' },
-                'IsProdDateTrackingActive': { compId: 10197, labelText: 'Üretim Tarihi', type: 'DATE' },
-                'NULLIsProdDateTrackingActive': { compId: 10197, labelText: 'Üretim Tarihi', type: 'DATE' } // Veritabanındaki olası harf hatası için Fallback
-            };
-
-            if (dynamicFieldsConfig[param.key]) {
-                const config = dynamicFieldsConfig[param.key];
-                const isActive = param.value ? 1 : 0;
-                const scrid = 101; // GRN_SCREEN
-
-                const checkField = await pool.request()
-                    .input('scrid', sql.Int, scrid)
-                    .input('compid', sql.Int, config.compId)
-                    .query('SELECT COMPID FROM WMS_UIDesign WHERE SCRID = @scrid AND COMPID = @compid');
-                
-                if (checkField.recordset.length > 0) {
-                    // Kayıt VARSA: UPDATE (Sıralamayı bozmadan sadece Görünürlük ve Zorunluluğu değiştir)
-                    await pool.request()
-                        .input('scrid', sql.Int, scrid)
-                        .input('compid', sql.Int, config.compId)
-                        .input('isVisible', sql.Bit, isActive)
-                        .input('isRequired', sql.Bit, isActive)
-                        .query(`UPDATE WMS_UIDesign 
-                                SET IsVisible = @isVisible, IsRequired = @isRequired 
-                                WHERE SCRID = @scrid AND COMPID = @compid`);
-                } else if (isActive) {
-                    // Kayıt YOKSA ve parametre AÇIK ise: INSERT
-                    const maxSortResult = await pool.request()
-                        .input('scrid', sql.Int, scrid)
-                        .query("SELECT ISNULL(MAX(SortOrder), 0) as MaxSort FROM WMS_UIDesign WHERE SCRID = @scrid AND SectionGroup = 'LINE'");
-                    const newSortOrder = maxSortResult.recordset[0].MaxSort + 1;
-
-                    await pool.request()
-                        .input('scrid', sql.Int, scrid)
-                        .input('compid', sql.Int, config.compId)
-                        .input('labelText', sql.NVarChar, config.labelText)
-                        .input('compType', sql.VarChar, config.type)
-                        .input('sortOrder', sql.Int, newSortOrder)
-                        .query(`
-                            INSERT INTO WMS_UIDesign 
-                            (SCRID, COMPID, LabelText, ComponentType, DefaultValue, GuideDisplayType, DataSourceSQL, MaxLength, SortOrder, IsVisible, IsRequired, GuideMappingJSON, SectionGroup)
-                            VALUES 
-                            (@scrid, @compid, @labelText, @compType, '', 'CARD', '', 50, @sortOrder, 1, 1, '[]', 'LINE')
-                        `);
-                }
-            }
-        }
-
-        res.json({ success: true, message: 'Parametreler MSSQL üzerinde güncellendi.' });
+        await wmsService.updateParameters(req.body);
+        res.json({ success: true, message: 'Parametreler güncellendi.' });
     } catch (error) {
-        console.error('SQL updateParameters error:', error);
-        res.status(500).json({ success: false, message: 'Kayıt hatası: ' + error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// UI Design Management (WMS_UIDesign Table)
+// --- UI Design ---
 exports.getUIDesign = async (req, res) => {
     try {
         const { scrid } = req.query;
-        const pool = await poolPromise;
-        const result = await pool.request()
-            .input('scrid', sql.Int, parseInt(scrid))
-            .query('SELECT * FROM WMS_UIDesign WHERE SCRID = @scrid ORDER BY SortOrder');
-
-        res.json({ success: true, data: result.recordset });
+        const data = await wmsService.getUIDesign(scrid);
+        res.json({ success: true, data });
     } catch (error) {
-        console.error('getUIDesign error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
@@ -182,157 +223,40 @@ exports.getUIDesign = async (req, res) => {
 exports.saveUIDesign = async (req, res) => {
     try {
         const { scrid, fields } = req.body;
-        const pool = await poolPromise;
-
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
-
-        try {
-            const request = new sql.Request(transaction);
-            await request.input('scrid', sql.Int, parseInt(scrid))
-                .query('DELETE FROM WMS_UIDesign WHERE SCRID = @scrid');
-
-            for (const field of fields) {
-                const insertReq = new sql.Request(transaction);
-                await insertReq
-                    .input('SCRID', sql.Int, parseInt(scrid))
-                    .input('COMPID', sql.Int, parseInt(field.COMPID))
-                    .input('LabelText', sql.NVarChar, field.LabelText)
-                    .input('ComponentType', sql.VarChar, field.ComponentType || 'TEXT')
-                    .input('DefaultValue', sql.NVarChar, field.DefaultValue || '')
-                    .input('GuideDisplayType', sql.VarChar, field.GuideDisplayType || 'CARD')
-                    .input('DataSourceSQL', sql.NVarChar, field.DataSourceSQL || '')
-                    .input('MaxLength', sql.Int, parseInt(field.MaxLength) || 0)
-                    .input('SortOrder', sql.Int, field.SortOrder)
-                    .input('IsVisible', sql.Bit, field.IsVisible ? 1 : 0)
-                    .input('IsRequired', sql.Bit, field.IsRequired ? 1 : 0)
-                    .input('GuideMappingJSON', sql.NVarChar, field.GuideMappingJSON ? JSON.stringify(field.GuideMappingJSON) : '')
-                    .input('SectionGroup', sql.VarChar, field.SectionGroup || 'HEADER')
-                    .query(`
-                        INSERT INTO WMS_UIDesign (
-                            SCRID, COMPID, LabelText, ComponentType, 
-                            DefaultValue, GuideDisplayType, DataSourceSQL, 
-                            MaxLength, SortOrder, IsVisible, IsRequired,
-                            GuideMappingJSON, SectionGroup
-                        )
-                        VALUES (
-                            @SCRID, @COMPID, @LabelText, @ComponentType, 
-                            @DefaultValue, @GuideDisplayType, @DataSourceSQL, 
-                            @MaxLength, @SortOrder, @IsVisible, @IsRequired,
-                            @GuideMappingJSON, @SectionGroup
-                        )
-                    `);
-            }
-            await transaction.commit();
-            res.json({ success: true, message: 'Tasarım veritabanına kaydedildi.' });
-        } catch (err) {
-            await transaction.rollback();
-            throw err;
-        }
+        await wmsService.saveUIDesign(scrid, fields);
+        res.json({ success: true, message: 'Tasarım kaydedildi.' });
     } catch (error) {
-        console.error('saveUIDesign error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// UI Tasarımı Bileşen Silme
 exports.deleteUIDesign = async (req, res) => {
     try {
         const { ScreenCode, ComponentID } = req.body;
-        
-        if (!ScreenCode || !ComponentID) {
-            return res.status(400).json({ success: false, message: 'ScreenCode ve ComponentID zorunludur.' });
-        }
-
-        const pool = await poolPromise;
-        const result = await pool.request()
-            .input('SCRID', sql.Int, parseInt(ScreenCode))
-            .input('COMPID', sql.Int, parseInt(ComponentID))
-            .query('DELETE FROM WMS_UIDesign WHERE SCRID = @SCRID AND COMPID = @COMPID');
-            
-        // Eğer veritabanında zaten yoksa (yeni eklenip henüz kaydedilmemiş bir satırsa),
-        // işlemi yine de başarılı sayıyoruz ki arayüzden (state) silinebilsin.
-        res.json({ 
-            success: true, 
-            message: result.rowsAffected[0] > 0 
-                ? 'Bileşen başarıyla silindi.' 
-                : 'Bileşen veritabanında bulunamadı (Zaten silinmiş veya henüz kaydedilmemiş olabilir).' 
-        });
+        const deleted = await wmsService.deleteUIDesignComponent(ScreenCode, ComponentID);
+        res.json({ success: true, message: deleted ? 'Bileşen silindi.' : 'Bileşen bulunamadı.' });
     } catch (error) {
-        console.error('deleteUIDesign error:', error);
-        res.status(500).json({ success: false, message: 'Bileşen silinirken hata oluştu: ' + error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// Dinamik Rehber Verisi Çekme
 exports.executeDynamicSQL = async (req, res) => {
     try {
         const { scrid, compid } = req.query;
-        const pool = await poolPromise;
-
-        const fieldInfo = await pool.request()
-            .input('sc', sql.Int, parseInt(scrid))
-            .input('cid', sql.Int, parseInt(compid))
-            .query('SELECT DataSourceSQL FROM WMS_UIDesign WHERE SCRID = @sc AND COMPID = @cid');
-
-        const rawSQL = fieldInfo.recordset[0]?.DataSourceSQL;
-        if (!rawSQL) return res.status(404).json({ success: false, message: 'Sorgu bulunamadı.' });
-
-        // Basit Güvenlik Kontrolü
-        const forbidden = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER'];
-        if (forbidden.some(k => rawSQL.toUpperCase().includes(k))) {
-            return res.status(403).json({ success: false, message: 'Güvenlik: Sadece SELECT sorgularına izin verilir.' });
-        }
-
-        const result = await pool.request().query(rawSQL);
-        res.json({ success: true, data: result.recordset });
+        const data = await wmsService.executeDynamicSQL(scrid, compid);
+        res.json({ success: true, data });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'SQL Hatası: ' + error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// Drafts (Taslaklar)
+// --- Drafts ---
 exports.saveDraft = async (req, res) => {
     try {
         const { userId, screenCode, headerData, lineData } = req.body;
-        const pool = await poolPromise;
-
-        // Check if active draft exists
-        const check = await pool.request()
-            .input('uid', sql.VarChar, String(userId))
-            .input('sc', sql.VarChar, String(screenCode))
-            .query('SELECT DraftID FROM WMS_TransactionDrafts WHERE UserID = @uid AND ScreenCode = @sc AND IsActive = 1');
-
-        if (check.recordset.length > 0) {
-            if (!lineData || lineData.length === 0) {
-                // Tüm kalemler silindiyse veya boş gönderildiyse taslağı pasife çek
-                await pool.request()
-                    .input('id', sql.Int, check.recordset[0].DraftID)
-                    .query('UPDATE WMS_TransactionDrafts SET IsActive = 0, LastUpdatedAt = GETDATE() WHERE DraftID = @id');
-            } else {
-                // Update
-                await pool.request()
-                    .input('hd', sql.NVarChar, JSON.stringify(headerData))
-                    .input('ld', sql.NVarChar, JSON.stringify(lineData))
-                    .input('id', sql.Int, check.recordset[0].DraftID)
-                    .query('UPDATE WMS_TransactionDrafts SET HeaderData = @hd, LineData = @ld, LastUpdatedAt = GETDATE() WHERE DraftID = @id');
-            }
-        } else {
-            // Eğer liste boşken save atılıyorsa hiç taslak oluşturma
-            if (lineData && lineData.length > 0) {
-                // Insert
-                await pool.request()
-                    .input('uid', sql.VarChar, String(userId))
-                    .input('sc', sql.VarChar, String(screenCode))
-                    .input('hd', sql.NVarChar, JSON.stringify(headerData))
-                    .input('ld', sql.NVarChar, JSON.stringify(lineData))
-                    .query('INSERT INTO WMS_TransactionDrafts (UserID, ScreenCode, HeaderData, LineData, IsActive, CreatedAt, LastUpdatedAt) VALUES (@uid, @sc, @hd, @ld, 1, GETDATE(), GETDATE())');
-            }
-        }
-
-        res.json({ success: true, message: 'Taslak başarıyla kaydedildi.' });
+        await wmsService.saveDraft(userId, screenCode, headerData, lineData);
+        res.json({ success: true, message: 'Taslak kaydedildi.' });
     } catch (error) {
-        console.error('saveDraft error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
@@ -340,43 +264,29 @@ exports.saveDraft = async (req, res) => {
 exports.getActiveDraft = async (req, res) => {
     try {
         const { userId, screenCode } = req.query;
-        const pool = await poolPromise;
-
-        const result = await pool.request()
-            .input('uid', sql.VarChar, String(userId))
-            .input('sc', sql.VarChar, String(screenCode))
-            .query('SELECT * FROM WMS_TransactionDrafts WHERE UserID = @uid AND ScreenCode = @sc AND IsActive = 1');
-
-        if (result.recordset.length > 0) {
-            res.json({ success: true, draft: result.recordset[0] });
-        } else {
-            res.json({ success: true, draft: null });
-        }
+        const draft = await wmsService.getActiveDraft(userId, screenCode);
+        res.json({ success: true, draft });
     } catch (error) {
-        console.error('getActiveDraft error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// --- Traceability (Seri Numarası Üretimi) ---
+// --- Traceability ---
 exports.getNextSerial = async (req, res) => {
     try {
-        const pool = await poolPromise;
-        const result = await pool.request().query(`
-            SELECT CAST(YEAR(GETDATE()) AS VARCHAR(4)) + 
-                   RIGHT('000000' + CAST(NEXT VALUE FOR WMS_SerialSeq AS VARCHAR(6)), 6) AS SerialNumber
-        `);
-        
-        if (result.recordset.length > 0) {
-            res.json({ success: true, serial: result.recordset[0].SerialNumber });
-        } else {
-            throw new Error('Seri numarası üretilemedi.');
-        }
+        const serial = await wmsService.getNextSerial();
+        res.json({ success: true, serial });
     } catch (error) {
-        console.error('getNextSerial error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'SQL Hatası: WMS_SerialSeq nesnesi bulunamadı veya yetki yok. Lütfen veritabanında Sequence oluşturduğunuzdan emin olun.' 
-        });
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- Diagnostic ---
+exports.testConnection = async (req, res) => {
+    try {
+        const data = await netsisService.getToken();
+        res.json({ success: true, message: 'NetOpenX Bağlantısı Başarılı', data });
+    } catch (error) {
+        res.status(error.status || 500).json({ success: false, message: error.message, detail: error.raw || error });
     }
 };

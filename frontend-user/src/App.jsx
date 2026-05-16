@@ -8,6 +8,9 @@ import './index.css';
 
 const MainApp = () => {
     const { user, setUser } = useConfig();
+    const [isSidebarOpen, setIsSidebarOpen] = React.useState(window.innerWidth > 768);
+
+    const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -23,8 +26,6 @@ const MainApp = () => {
             });
             const data = await res.json();
             if (data.success) {
-                // ConfigContext içindeki user state'ini güncelliyoruz.
-                // Bu sayede Sidebar ve diğer ekranlar otomatik olarak yetkileri tanıyacak.
                 setUser(data.data);
             } else {
                 alert(data.message);
@@ -60,19 +61,31 @@ const MainApp = () => {
 
     return (
         <Router>
-            <div className="app-container">
-                <Sidebar />
-                <main className="main-content">
-                    <Routes>
-                        <Route path="/" element={<Dashboard />} />
-                        <Route path="/mal-kabul" element={
-                            user.role === 'admin' || user.permissions?.includes('mal-kabul') 
-                                ? <MalKabul /> 
-                                : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
-                        } />
-                        <Route path="*" element={<div>404 - Sayfa Bulunamadı</div>} />
-                    </Routes>
-                </main>
+            <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+                <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
+                
+                <div className="content-wrapper">
+                    <header className="app-header">
+                        <button className="hamburger-btn" onClick={toggleSidebar}>
+                            {isSidebarOpen ? '✕' : '☰'}
+                        </button>
+                        <div className="header-title">
+                            <span className="user-badge">{user.role?.toUpperCase()}</span>
+                        </div>
+                    </header>
+
+                    <main className="main-content">
+                        <Routes>
+                            <Route path="/" element={<Dashboard />} />
+                            <Route path="/mal-kabul" element={
+                                user.role === 'admin' || user.permissions?.includes('mal-kabul') 
+                                    ? <MalKabul /> 
+                                    : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
+                            } />
+                            <Route path="*" element={<div>404 - Sayfa Bulunamadı</div>} />
+                        </Routes>
+                    </main>
+                </div>
             </div>
         </Router>
     );

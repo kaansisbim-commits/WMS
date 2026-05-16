@@ -71,7 +71,7 @@ const MalKabul = () => {
         const newErrors = {};
         let firstErrorId = null;
         let missingNames = [];
-        
+
         for (const field of requiredFields) {
             const val = formData[field.COMPID];
             if (val === undefined || val === null || String(val).trim() === '') {
@@ -85,7 +85,7 @@ const MalKabul = () => {
             setFormErrors(newErrors);
             setStatus({ message: `Lütfen zorunlu alanları doldurunuz: ${missingNames.join(', ')}`, type: 'error' });
             setTimeout(() => setStatus({ message: '', type: '' }), 5000);
-            
+
             // İlk boş alana odaklan
             if (firstErrorId && inputRefs.current[firstErrorId]) {
                 inputRefs.current[firstErrorId].focus();
@@ -100,6 +100,13 @@ const MalKabul = () => {
         lineFields.forEach(f => {
             if (formData[f.COMPID] !== undefined && formData[f.COMPID] !== '') {
                 lineDataToSave[f.COMPID] = formData[f.COMPID];
+            }
+        });
+
+        // Gizli kolonları da (_ ile başlayanlar) satır verisine ekle
+        Object.keys(formData).forEach(key => {
+            if (key.startsWith('_')) {
+                lineDataToSave[key] = formData[key];
             }
         });
 
@@ -181,10 +188,11 @@ const MalKabul = () => {
     };
 
     const handleSelectFromGuide = async (item) => {
-        const value = item.code || Object.values(item)[0];
+        // Netsis için kritik kodları önceliklendir (CARI_KOD, STOK_KODU, KOD, CODE)
+        const value = item.CARI_KOD || item.STOK_KODU || item.KOD || item.CODE || item.code || Object.values(item)[0];
 
         let serialObj = {};
-        
+
         // Eğer seçilen alan bir ürün ise veya formda 'Seri No' alanı varsa, asenkron seri no üret
         const seriField = lineFields.find(f => f.LabelText === 'Seri No');
         if (seriField && !formData[seriField.COMPID]) {
@@ -201,6 +209,13 @@ const MalKabul = () => {
         setFormData(prev => {
             const newData = { ...prev, [modalConfig.type]: value, ...serialObj };
 
+            // Otomatik Gizli Kolon Eşleme (_ ile başlayanlar)
+            Object.keys(item).forEach(key => {
+                if (key.startsWith('_')) {
+                    newData[key] = item[key];
+                }
+            });
+
             if (modalConfig.field && Array.isArray(modalConfig.field.GuideMappingJSON)) {
                 modalConfig.field.GuideMappingJSON.forEach(mapping => {
                     if (mapping.sourceColumn && mapping.targetComponentID) {
@@ -213,7 +228,7 @@ const MalKabul = () => {
         });
 
         setModalConfig(prev => ({ ...prev, isOpen: false }));
-        
+
         if (formErrors[modalConfig.type]) {
             setFormErrors(prev => {
                 const next = { ...prev };
@@ -250,26 +265,40 @@ const MalKabul = () => {
 
         const payload = {
             header: currentHeader,
-            lines: lineItems
+            lines: lineItems,
+            userId: user?.id,
+            username: user?.name || user?.username || 'Admin'
         };
 
-        console.log('Final Data to NetOpenX:', payload);
+        console.log('Final Data to WMS/NetOpenX:', payload);
 
-        // Simüle Netsis Save
-        // const res = await fetchApi(`/process?draftId=${draftId || ''}`, { method: 'POST', body: JSON.stringify(payload) });
+        // Gerçek Backend Kaydı
+        const res = await fetchApi(`/process?draftId=${draftId || ''}`, { method: 'POST', body: JSON.stringify(payload) });
 
-        setStatus({ message: 'İşlem Başarılı! Netsis\'e aktarıldı.', type: 'success' });
-        setTimeout(() => setStatus({ message: '', type: '' }), 3000);
+        if (res && res.success) {
+            setStatus({ message: 'İşlem Başarılı! Fiş WMS\'e kaydedildi, Netsis kuyruğuna alındı.', type: 'success' });
 
-        // Clear everything after success
-        setFormData({});
-        setLineItems([]);
-        setDraftId(null);
+            // Arka planda Worker'ı anında tetikle (Fire and forget)
+            if (res.receiptId) {
+                fetchApi('/integration/send-to-netsis', { method: 'POST', body: JSON.stringify({ receiptId: res.receiptId }) })
+                    .catch(err => console.error("Anında Netsis aktarımı tetiklenemedi:", err));
+            }
+
+            setTimeout(() => setStatus({ message: '', type: '' }), 3000);
+
+            // Clear everything after success
+            setFormData({});
+            setLineItems([]);
+            setDraftId(null);
+        } else {
+            setStatus({ message: 'Hata: ' + (res?.message || 'Bilinmeyen bir hata oluştu.'), type: 'error' });
+            setTimeout(() => setStatus({ message: '', type: '' }), 5000);
+        }
     };
 
     const renderField = (field, disabled = false) => {
         const hasError = formErrors[field.COMPID];
-        const baseStyle = { 
+        const baseStyle = {
             cursor: disabled ? 'not-allowed' : (field.ComponentType === 'GUIDE' ? 'pointer' : 'text'),
             background: disabled || field.ComponentType === 'READONLY' ? '#f1f5f9' : '#f8fafc',
         };
@@ -403,31 +432,32 @@ const MalKabul = () => {
                             <table style={{ width: '100%', minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.85rem' }}>
                                 <thead>
                                     <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0' }}>
-                                        {lineFields.map(f => {
-                                            let headerText = f.LabelText;
-                                            if (headerText.includes('Ürün Seçimi') || headerText.includes('Barkod')) headerText = 'Stok Adı';
-                                            if (headerText === 'Miktar') headerText = 'Okutulan Miktar';
+                                        {lineFields
+                                            .filter(f => !f.LabelText.includes('Ürün Seçimi') && !f.LabelText.includes('Barkod'))
+                                            .map(f => {
+                                                let headerText = f.LabelText;
+                                                if (headerText === 'Miktar') headerText = 'Okutulan Miktar';
 
-                                            let align = 'center';
-                                            if (headerText === 'Stok Adı') align = 'left';
+                                                let align = 'center';
+                                                if (headerText === 'Stok Adı') align = 'left';
 
-                                            return (
-                                                <th key={f.COMPID} style={{ 
-                                                    padding: '8px 12px', 
-                                                    textAlign: align, 
-                                                    whiteSpace: 'nowrap',
-                                                    fontWeight: 'bold',
-                                                    borderBottom: '2px solid #e2e8f0'
-                                                }}>
-                                                    {headerText}
-                                                </th>
-                                            );
-                                        })}
+                                                return (
+                                                    <th key={f.COMPID} style={{
+                                                        padding: '8px 12px',
+                                                        textAlign: align,
+                                                        whiteSpace: 'nowrap',
+                                                        fontWeight: 'bold',
+                                                        borderBottom: '2px solid #e2e8f0'
+                                                    }}>
+                                                        {headerText}
+                                                    </th>
+                                                );
+                                            })}
                                         {/* Silme kolonu başlığı - sağa sabit (sticky) */}
-                                        <th style={{ 
-                                            width: '50px', 
-                                            position: 'sticky', 
-                                            right: 0, 
+                                        <th style={{
+                                            width: '50px',
+                                            position: 'sticky',
+                                            right: 0,
                                             backgroundColor: '#f1f5f9',
                                             borderBottom: '2px solid #e2e8f0',
                                             zIndex: 10
@@ -437,31 +467,31 @@ const MalKabul = () => {
                                 <tbody>
                                     {lineItems.map((item, index) => (
                                         <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                            {lineFields.map(f => {
-                                                let cellValue = item[f.COMPID] || '-';
-                                                let isProductName = f.LabelText.includes('Ürün Seçimi') || f.LabelText.includes('Barkod');
+                                            {lineFields
+                                                .filter(f => !f.LabelText.includes('Ürün Seçimi') && !f.LabelText.includes('Barkod'))
+                                                .map(f => {
+                                                    let cellValue = item[f.COMPID] || '-';
+                                                    let align = 'center';
 
-                                                let align = isProductName ? 'left' : 'center';
-
-                                                return (
-                                                    <td
-                                                        key={f.COMPID}
-                                                        title={cellValue}
-                                                        style={{
-                                                            padding: '8px 12px',
-                                                            textAlign: align,
-                                                            whiteSpace: 'nowrap',
-                                                            borderBottom: '1px solid #e2e8f0'
-                                                        }}
-                                                    >
-                                                        {cellValue}
-                                                    </td>
-                                                );
-                                            })}
+                                                    return (
+                                                        <td
+                                                            key={f.COMPID}
+                                                            title={cellValue}
+                                                            style={{
+                                                                padding: '8px 12px',
+                                                                textAlign: align,
+                                                                whiteSpace: 'nowrap',
+                                                                borderBottom: '1px solid #e2e8f0'
+                                                            }}
+                                                        >
+                                                            {cellValue}
+                                                        </td>
+                                                    );
+                                                })}
                                             {/* Sil butonu hücresi - sağa sabit (sticky) */}
-                                            <td style={{ 
-                                                padding: '8px 12px', 
-                                                textAlign: 'center', 
+                                            <td style={{
+                                                padding: '8px 12px',
+                                                textAlign: 'center',
                                                 verticalAlign: 'middle',
                                                 position: 'sticky',
                                                 right: 0,
@@ -497,6 +527,31 @@ const MalKabul = () => {
                                         </tr>
                                     ))}
                                 </tbody>
+                                <tfoot style={{ backgroundColor: '#f8fafc', fontWeight: 'bold' }}>
+                                    <tr>
+                                        {lineFields
+                                            .filter(f => !f.LabelText.includes('Ürün Seçimi') && !f.LabelText.includes('Barkod'))
+                                            .map((f, i, arr) => {
+                                                const isMiktarField = f.LabelText === 'Miktar';
+                                                const isFirstField = i === 0;
+
+                                                let footerText = '';
+                                                if (isFirstField) footerText = `Toplam: ${lineItems.length} Satır`;
+                                                if (isMiktarField) {
+                                                    const totalQty = lineItems.reduce((sum, item) => sum + (parseFloat(item[f.COMPID]) || 0), 0);
+                                                    footerText = totalQty.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+                                                }
+
+                                                return (
+                                                    <td key={f.COMPID} style={{ padding: '12px', textAlign: 'center', borderTop: '2px solid #e2e8f0' }}>
+                                                        {footerText}
+                                                    </td>
+                                                );
+                                            })
+                                        }
+                                        <td style={{ position: 'sticky', right: 0, backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}></td>
+                                    </tr>
+                                </tfoot>
                             </table>
                         </div>
 

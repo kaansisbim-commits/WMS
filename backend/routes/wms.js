@@ -13,8 +13,14 @@ router.use(transactionLogger);
 // GET Data (MSSQL)
 router.get('/data', wmsController.getData);
 
-// POST Data (NetOpenX)
+// POST Data (WMS Local Save)
 router.post('/process', wmsController.postData);
+
+// NetOpenX Integration (Worker & Logs)
+router.post('/integration/send-to-netsis', wmsController.sendToNetsis);
+router.post('/integration/test-connection', wmsController.testConnection);
+router.get('/integration/logs', wmsController.getIntegrationLogs);
+
 
 // GET Parameters
 router.get('/parameters', wmsController.getParameters);

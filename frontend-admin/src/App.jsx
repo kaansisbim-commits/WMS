@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react
 import UserManagement from './pages/UserManagement';
 import FormDesigner from './pages/FormDesigner';
 import SystemParameters from './pages/SystemParameters';
+import IntegrationMonitor from './pages/IntegrationMonitor';
 import './App.css';
 
 const App = () => {
@@ -71,6 +72,9 @@ const App = () => {
                         <NavLink to="/parameters" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                             <span style={{ fontSize: '1.2rem', marginRight: '12px' }}>⚙️</span> Sistem Parametreleri
                         </NavLink>
+                        <NavLink to="/monitor" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <span style={{ fontSize: '1.2rem', marginRight: '12px' }}>📡</span> Aktarım İzleme
+                        </NavLink>
 
                         <div 
                             className={`nav-group-header ${screensOpen ? 'open' : ''}`} 
@@ -97,6 +101,7 @@ const App = () => {
                         <Route path="/users" element={<UserManagement />} />
                         <Route path="/designer" element={<FormDesigner />} />
                         <Route path="/parameters" element={<SystemParameters />} />
+                        <Route path="/monitor" element={<IntegrationMonitor />} />
                         <Route path="/" element={<Navigate to="/users" />} />
                     </Routes>
                 </main>

@@ -36,16 +36,78 @@ h1, h2, h3, .brand-text {
 }
 
 /* Layout */
-.app-container {
+.app-layout {
   display: flex;
   min-height: 100vh;
+  width: 100%;
+}
+
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-closed .sidebar {
+  width: 0;
+  overflow: hidden;
+}
+
+.content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-header {
+  height: 64px;
+  background: var(--card-bg);
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 900;
+  box-shadow: var(--shadow-sm);
+}
+
+.hamburger-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--secondary-color);
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background 0.2s;
+  margin-right: 1rem;
+}
+
+.hamburger-btn:hover {
+  background: #f1f5f9;
+}
+
+.user-badge {
+  background: #e2e8f0;
+  color: var(--secondary-color);
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .main-content {
   flex: 1;
-  padding: 1.5rem;
+  padding: 2rem;
   max-width: 100%;
-  transition: padding 0.3s ease;
+  overflow-y: auto;
 }
 
 /* UI Elements */

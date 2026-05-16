@@ -4,11 +4,8 @@ import menuConfig from '../config/MenuConfig.json';
 import { useConfig } from '../context/ConfigContext';
 import './Sidebar.css';
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, toggleSidebar }) => {
     const { user, params, setUser } = useConfig();
-    const [isOpen, setIsOpen] = useState(false);
-
-    const toggleSidebar = () => setIsOpen(!isOpen);
 
     const filteredMenu = menuConfig.menuItems.filter(item => {
         // Permission check
@@ -24,9 +21,6 @@ const Sidebar = () => {
 
     return (
         <>
-            <button className="mobile-toggle" onClick={toggleSidebar}>
-                {isOpen ? '✕' : '☰'}
-            </button>
             <div className={`sidebar ${isOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
                     <h2 className="brand-text">KAAN WMS</h2>
@@ -37,7 +31,7 @@ const Sidebar = () => {
                             key={item.id} 
                             to={item.path} 
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                            onClick={() => setIsOpen(false)}
+                            onClick={() => window.innerWidth <= 768 && toggleSidebar()}
                         >
                             <span className="nav-icon">▹</span>
                             <span className="nav-label">{item.label}</span>

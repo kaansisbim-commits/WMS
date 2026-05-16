@@ -5,6 +5,10 @@ const SystemParameters = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    // NetOpenX Connection Test States
+    const [connectionStatus, setConnectionStatus] = useState('idle'); // idle, loading, success, error
+    const [testError, setTestError] = useState('');
+
     useEffect(() => {
         const host = window.location.hostname;
         fetch(`http://${host}:8080/api/wms/parameters`, {
@@ -21,6 +25,33 @@ const SystemParameters = () => {
                 setLoading(false);
             });
     }, []);
+
+    const handleTestConnection = () => {
+        setConnectionStatus('loading');
+        setTestError('');
+        const host = window.location.hostname;
+
+        fetch(`http://${host}:8080/api/wms/integration/test-connection`, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer Admin123Token'
+            }
+        })
+
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    setConnectionStatus('success');
+                } else {
+                    setConnectionStatus('error');
+                    setTestError(data.message || 'Bilinmeyen hata');
+                }
+            })
+            .catch(err => {
+                setConnectionStatus('error');
+                setTestError(err.message);
+            });
+    };
 
     const toggleParam = (key) => {
         setParams(prev => prev.map(p =>
@@ -54,11 +85,48 @@ const SystemParameters = () => {
         </div>
     );
 
+    const getStatusStyles = () => {
+        switch (connectionStatus) {
+            case 'loading': return { background: '#94a3b8', cursor: 'wait' };
+            case 'success': return { background: '#22c55e', color: '#fff' };
+            case 'error': return { background: '#ef4444', color: '#fff' };
+            default: return { background: 'var(--primary-color)', color: '#fff' };
+        }
+    };
+
     return (
         <div className="parameters-page">
-            <div className="page-header">
-                <h1 className="brand-text page-title">Sistem Parametreleri</h1>
-                <p className="text-muted">Sadece Yetkili Kullanıcıların parametreleri yönetmesi önerilir.</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h1 className="brand-text page-title">Sistem Parametreleri</h1>
+                    <p className="text-muted">Sadece Yetkili Kullanıcıların parametreleri yönetmesi önerilir.</p>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                    <button
+                        className="btn"
+                        onClick={handleTestConnection}
+                        disabled={connectionStatus === 'loading'}
+                        style={{
+                            ...getStatusStyles(),
+                            transition: 'all 0.3s ease',
+                            padding: '0.75rem 1.5rem',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                        }}
+                    >
+                        {connectionStatus === 'loading' ? '⏳ Test Ediliyor...' :
+                         connectionStatus === 'success' ? '✅ Bağlantı Başarılı' :
+                         connectionStatus === 'error' ? '❌ Bağlantı Başarısız' :
+                         '🔗 NetOpenX Bağlantısını Test Et'}
+                    </button>
+                    {connectionStatus === 'error' && (
+                        <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', maxWidth: '250px', marginLeft: 'auto' }}>
+                            {testError}
+                        </div>
+                    )}
+                </div>
             </div>
 
             <div className="card" style={{ maxWidth: '900px' }}>
