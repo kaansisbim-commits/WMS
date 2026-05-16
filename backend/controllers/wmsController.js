@@ -74,7 +74,7 @@ exports.postData = async (req, res) => {
 exports.getParameters = async (req, res) => {
     try {
         const pool = await poolPromise;
-        const result = await pool.request().query('SELECT ParamKey, ParamValue, Description FROM WMS_SystemParameters');
+        const result = await pool.request().query('SELECT ParamKey, ParamValue, Description, DisplayName FROM WMS_SystemParameters');
 
         // Return as array of objects for the UI to render dynamically
         const parameters = result.recordset.map(row => {
@@ -82,7 +82,8 @@ exports.getParameters = async (req, res) => {
             return {
                 key: row.ParamKey,
                 value: row.ParamValue == 1 || row.ParamValue === true,
-                description: row.Description
+                description: row.Description,
+                displayName: row.DisplayName
             };
         });
 
@@ -103,6 +104,56 @@ exports.updateParameters = async (req, res) => {
                 .input('key', sql.VarChar, param.key)
                 .input('val', sql.Bit, param.value ? 1 : 0)
                 .query('UPDATE WMS_SystemParameters SET ParamValue = @val WHERE ParamKey = @key');
+
+            // --- BUSINESS LOGIC: Dynamic UI Triggers (Lot, SKT, Üretim Tarihi) ---
+            const dynamicFieldsConfig = {
+                'IsLotTrackingActive': { compId: 10199, labelText: 'Lot No', type: 'TEXT' },
+                'IsSKTTrackingActive': { compId: 10198, labelText: 'SKT', type: 'DATE' },
+                'IsProdDateTrackingActive': { compId: 10197, labelText: 'Üretim Tarihi', type: 'DATE' },
+                'NULLIsProdDateTrackingActive': { compId: 10197, labelText: 'Üretim Tarihi', type: 'DATE' } // Veritabanındaki olası harf hatası için Fallback
+            };
+
+            if (dynamicFieldsConfig[param.key]) {
+                const config = dynamicFieldsConfig[param.key];
+                const isActive = param.value ? 1 : 0;
+                const scrid = 101; // GRN_SCREEN
+
+                const checkField = await pool.request()
+                    .input('scrid', sql.Int, scrid)
+                    .input('compid', sql.Int, config.compId)
+                    .query('SELECT COMPID FROM WMS_UIDesign WHERE SCRID = @scrid AND COMPID = @compid');
+                
+                if (checkField.recordset.length > 0) {
+                    // Kayıt VARSA: UPDATE (Sıralamayı bozmadan sadece Görünürlük ve Zorunluluğu değiştir)
+                    await pool.request()
+                        .input('scrid', sql.Int, scrid)
+                        .input('compid', sql.Int, config.compId)
+                        .input('isVisible', sql.Bit, isActive)
+                        .input('isRequired', sql.Bit, isActive)
+                        .query(`UPDATE WMS_UIDesign 
+                                SET IsVisible = @isVisible, IsRequired = @isRequired 
+                                WHERE SCRID = @scrid AND COMPID = @compid`);
+                } else if (isActive) {
+                    // Kayıt YOKSA ve parametre AÇIK ise: INSERT
+                    const maxSortResult = await pool.request()
+                        .input('scrid', sql.Int, scrid)
+                        .query("SELECT ISNULL(MAX(SortOrder), 0) as MaxSort FROM WMS_UIDesign WHERE SCRID = @scrid AND SectionGroup = 'LINE'");
+                    const newSortOrder = maxSortResult.recordset[0].MaxSort + 1;
+
+                    await pool.request()
+                        .input('scrid', sql.Int, scrid)
+                        .input('compid', sql.Int, config.compId)
+                        .input('labelText', sql.NVarChar, config.labelText)
+                        .input('compType', sql.VarChar, config.type)
+                        .input('sortOrder', sql.Int, newSortOrder)
+                        .query(`
+                            INSERT INTO WMS_UIDesign 
+                            (SCRID, COMPID, LabelText, ComponentType, DefaultValue, GuideDisplayType, DataSourceSQL, MaxLength, SortOrder, IsVisible, IsRequired, GuideMappingJSON, SectionGroup)
+                            VALUES 
+                            (@scrid, @compid, @labelText, @compType, '', 'CARD', '', 50, @sortOrder, 1, 1, '[]', 'LINE')
+                        `);
+                }
+            }
         }
 
         res.json({ success: true, message: 'Parametreler MSSQL üzerinde güncellendi.' });
