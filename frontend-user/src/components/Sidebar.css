@@ -105,3 +105,19 @@
         padding: 1.5rem 1rem;
     }
 }
+
+/* Submenu / Accordion styles */
+.submenu {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
+
+.submenu.open {
+    max-height: 500px;
+}
+
+.submenu-item {
+    font-size: 0.9rem;
+    padding: 0.75rem 2rem 0.75rem 3.5rem;
+}

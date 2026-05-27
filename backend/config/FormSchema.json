@@ -23,6 +23,7 @@
           "type": "text",
           "placeholder": "Maksimum 15 karakter",
           "maxLength": 15,
+          "IsRequired": true,
           "visibilityCondition": "always",
           "order": 2,
           "SectionGroup": "HEADER"

@@ -18,10 +18,27 @@
       }
     },
     {
-      "id": "depo-sevk",
-      "label": "Depolar Arası Sevk",
+      "id": "mal-kabul-onay",
+      "label": "Mal Kabul Onay",
+      "icon": "CheckIcon",
+      "path": "/mal-kabul-onay",
+      "roles": ["admin", "user"],
+      "params": {
+        "active": "MALKABULONAY"
+      }
+    },
+    {
+      "id": "mal-kabul-iptal",
+      "label": "Mal Kabul İptal",
+      "icon": "CancelIcon",
+      "path": "/mal-kabul-iptal",
+      "roles": ["admin", "user"]
+    },
+    {
+      "id": "transfer-islemleri",
+      "label": "Transfer İşlemleri",
       "icon": "TransferIcon",
-      "path": "/sevk",
+      "path": "#",
       "roles": ["admin", "user"]
     },
     {
@@ -35,11 +52,11 @@
       }
     },
     {
-      "id": "admin-portal",
-      "label": "Yönetim Paneli",
-      "icon": "SettingsIcon",
-      "path": "/admin",
-      "roles": ["admin"]
+      "id": "raporlar",
+      "label": "Raporlar",
+      "icon": "AssessmentIcon",
+      "path": "#",
+      "roles": ["admin", "user"]
     }
   ]
 }

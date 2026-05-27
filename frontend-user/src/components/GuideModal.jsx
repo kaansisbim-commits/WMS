@@ -11,6 +11,24 @@ const GuideModal = ({ isOpen, onClose, title, data, onSelect, displayType = 'CAR
 
     if (!isOpen) return null;
 
+    const formatDisplayValue = (val) => {
+        if (val === null || val === undefined) return '';
+        
+        // Tarih formatı algılama (ISO date / datetime format)
+        // Örn: "2026-05-19T00:00:00.000Z", "2026-05-19"
+        const dateRegex = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2})?)?$/;
+        if (typeof val === 'string' && dateRegex.test(val)) {
+            const date = new Date(val);
+            if (!isNaN(date.getTime())) {
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}-${month}-${year}`;
+            }
+        }
+        return String(val);
+    };
+
     const filteredData = (data || []).filter(item => {
         if (!searchTerm) return true;
         return Object.values(item).some(val => 
@@ -19,7 +37,7 @@ const GuideModal = ({ isOpen, onClose, title, data, onSelect, displayType = 'CAR
     });
 
     return (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3500, padding: '1rem' }}>
             <div className="card" style={{ width: '100%', maxWidth: displayType === 'GRID' ? '900px' : '500px', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h2 className="brand-text" style={{ fontSize: '1.5rem', color: 'black' }}>{title}</h2>
@@ -56,7 +74,7 @@ const GuideModal = ({ isOpen, onClose, title, data, onSelect, displayType = 'CAR
                                         {Object.entries(item)
                                             .filter(([key]) => !key.startsWith('_'))
                                             .map(([key, val], i) => (
-                                                <td key={i}>{val}</td>
+                                                <td key={i}>{formatDisplayValue(val)}</td>
                                             ))
                                         }
                                     </tr>
@@ -86,7 +104,7 @@ const GuideModal = ({ isOpen, onClose, title, data, onSelect, displayType = 'CAR
                                     </div>
                                     {Object.values(item)[2] && (
                                         <div style={{ fontSize: '0.8rem', color: 'var(--primary-color)', marginTop: '4px' }}>
-                                            {Object.values(item)[2]}
+                                            {formatDisplayValue(Object.values(item)[2])}
                                         </div>
                                     )}
                                 </div>

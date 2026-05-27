@@ -5,16 +5,13 @@ const UserManagement = () => {
     const [showModal, setShowModal] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [loading, setLoading] = useState(true);
-
-    const availablePermissions = [
-        { id: 'mal-kabul', label: 'Mal Kabul' },
-        { id: 'sayim', label: 'Stok Sayım' },
-        { id: 'sevk', label: 'Depo Sevk' },
-        { id: 'admin-access', label: 'Admin Panel' }
-    ];
+    const [availableScreens, setAvailableScreens] = useState([]);
+    const [userPermissions, setUserPermissions] = useState([]);
+    const [toastMessage, setToastMessage] = useState('');
 
     useEffect(() => {
         fetchUsers();
+        fetchScreens();
     }, []);
 
     const fetchUsers = async () => {
@@ -34,6 +31,45 @@ const UserManagement = () => {
         }
     };
 
+    const fetchScreens = async () => {
+        const host = window.location.hostname;
+        try {
+            const res = await fetch(`http://${host}:8080/api/admin/screens`, {
+                headers: { 'Authorization': 'Bearer Admin123Token' }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setAvailableScreens(data.data);
+            }
+        } catch (err) {
+            console.error('Ekranlar yüklenemedi:', err);
+        }
+    };
+
+    const openCreateModal = () => {
+        setEditingUser(null);
+        setUserPermissions([]);
+        setShowModal(true);
+    };
+
+    const openEditModal = async (u) => {
+        setEditingUser(u);
+        const host = window.location.hostname;
+        try {
+            const res = await fetch(`http://${host}:8080/api/admin/users/${u.id}/permissions`, {
+                headers: { 'Authorization': 'Bearer Admin123Token' }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setUserPermissions(data.data); // Array of ScreenIDs
+            }
+        } catch (err) {
+            console.error('Kullanıcı yetkileri alınamadı:', err);
+            setUserPermissions([]);
+        }
+        setShowModal(true);
+    };
+
     const handleSave = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
@@ -41,14 +77,15 @@ const UserManagement = () => {
         const userData = {
             user: formData.get('user'),
             pass: formData.get('pass'),
-            role: formData.get('role'),
-            permissions: Array.from(formData.getAll('permissions'))
+            role: formData.get('role')
         };
 
+        let targetUserId = null;
         if (editingUser) userData.id = editingUser.id;
 
         const host = window.location.hostname;
         try {
+            // 1. Save User info
             const res = await fetch(`http://${host}:8080/api/admin/users`, {
                 method: 'POST',
                 headers: { 
@@ -58,11 +95,35 @@ const UserManagement = () => {
                 body: JSON.stringify(userData)
             });
             const data = await res.json();
+            
             if (data.success) {
-                alert(data.message);
-                setShowModal(false);
-                setEditingUser(null);
-                fetchUsers();
+                targetUserId = editingUser ? editingUser.id : data.newId;
+                
+                // 2. Save Permissions
+                const selectedScreens = Array.from(formData.getAll('permissions')).map(id => parseInt(id));
+                const permRes = await fetch(`http://${host}:8080/api/admin/users/${targetUserId}/permissions`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer Admin123Token'
+                    },
+                    body: JSON.stringify({ screenIds: selectedScreens })
+                });
+                const permData = await permRes.json();
+                
+                if(permData.success) {
+                    setShowModal(false);
+                    setEditingUser(null);
+                    fetchUsers();
+                    
+                    // Show success toast
+                    setToastMessage('Kullanıcı yetkileri başarıyla güncellendi.');
+                    setTimeout(() => {
+                        setToastMessage('');
+                    }, 7000);
+                } else {
+                    alert('Kullanıcı kaydedildi ancak yetkiler güncellenemedi: ' + permData.message);
+                }
             } else {
                 alert('Hata: ' + data.message);
             }
@@ -94,13 +155,13 @@ const UserManagement = () => {
     };
 
     return (
-        <div className="user-management-page">
+        <div className="user-management-page" style={{ paddingBottom: '80px' }}>
             <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
                     <h1 className="brand-text page-title">Kullanıcı Yönetimi</h1>
                     <p className="text-muted">Sistemi kullanacak personelleri tanımlayın ve yetkilerini belirleyin.</p>
                 </div>
-                <button className="btn btn-primary" style={{ height: '3.5rem', padding: '0 2rem' }} onClick={() => { setEditingUser(null); setShowModal(true); }}>
+                <button className="btn btn-primary" style={{ height: '3.5rem', padding: '0 2rem' }} onClick={openCreateModal}>
                     + Yeni Personel Ekle
                 </button>
             </div>
@@ -140,18 +201,21 @@ const UserManagement = () => {
                                 </td>
                                 <td>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                        {u.permissions?.map(p => (
-                                            <span key={p} style={{ background: '#eff6ff', color: '#1e40af', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '500', border: '1px solid #dbeafe' }}>
-                                                {availablePermissions.find(ap => ap.id === p)?.label || p}
+                                        {u.permissions?.map((p, idx) => (
+                                            <span key={idx} style={{ background: '#eff6ff', color: '#1e40af', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '500', border: '1px solid #dbeafe' }}>
+                                                {p}
                                             </span>
                                         ))}
+                                        {(!u.permissions || u.permissions.length === 0) && (
+                                            <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontStyle: 'italic' }}>Yetki yok</span>
+                                        )}
                                     </div>
                                 </td>
                                 <td style={{ textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                                     <button className="btn btn-outline" onClick={() => toggleStatus(u)}>
                                         {u.isActive ? 'Pasife Al' : 'Aktif Et'}
                                     </button>
-                                    <button className="btn btn-outline" onClick={() => { setEditingUser(u); setShowModal(true); }}>
+                                    <button className="btn btn-outline" onClick={() => openEditModal(u)}>
                                         Düzenle
                                     </button>
                                 </td>
@@ -163,7 +227,7 @@ const UserManagement = () => {
 
             {showModal && (
                 <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
-                    <div className="card" style={{ width: '100%', maxWidth: '600px', animation: 'zoomIn 0.2s ease-out' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '600px', animation: 'zoomIn 0.2s ease-out', maxHeight: '90vh', overflowY: 'auto' }}>
                         <h2 className="brand-text" style={{ marginBottom: '2rem' }}>{editingUser ? 'Personel Bilgilerini Güncelle' : 'Yeni Personel Tanımla'}</h2>
                         <form onSubmit={handleSave}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
@@ -184,18 +248,18 @@ const UserManagement = () => {
                                 </select>
                             </div>
                             <div className="form-group" style={{ marginTop: '2rem' }}>
-                                <label className="form-label" style={{ marginBottom: '1rem' }}>Erişim Yetkileri</label>
+                                <label className="form-label" style={{ marginBottom: '1rem' }}>Ekran Erişim Yetkileri</label>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', padding: '1.5rem', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                                    {availablePermissions.map(p => (
-                                        <label key={p.id} style={{ fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                                    {availableScreens.map(s => (
+                                        <label key={s.ScreenID} style={{ fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '0.5rem', borderRadius: '8px', transition: 'background 0.2s' }} className="permission-hover">
                                             <input 
                                                 type="checkbox" 
                                                 name="permissions" 
-                                                value={p.id} 
-                                                defaultChecked={editingUser?.permissions?.includes(p.id)}
-                                                style={{ width: '18px', height: '18px' }}
+                                                value={s.ScreenID} 
+                                                defaultChecked={userPermissions.includes(s.ScreenID)}
+                                                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                                             />
-                                            {p.label}
+                                            {s.ScreenName}
                                         </label>
                                     ))}
                                 </div>
@@ -208,6 +272,31 @@ const UserManagement = () => {
                     </div>
                 </div>
             )}
+
+            {toastMessage && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: '2rem',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: '#10b981',
+                    color: 'white',
+                    padding: '1rem 2rem',
+                    borderRadius: '8px',
+                    fontWeight: '600',
+                    boxShadow: '0 10px 25px rgba(16,185,129,0.4)',
+                    animation: 'slideUp 0.3s ease-out, fadeOut 0.5s ease-out 6.5s forwards',
+                    zIndex: 99999
+                }}>
+                    ✓ {toastMessage}
+                </div>
+            )}
+            
+            <style>{`
+                .permission-hover:hover { background: #e2e8f0; }
+                @keyframes slideUp { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+                @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+            `}</style>
         </div>
     );
 };

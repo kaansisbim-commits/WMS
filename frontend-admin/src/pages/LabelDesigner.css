@@ -1,0 +1,217 @@
+.label-designer-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 5rem);
+}
+
+.designer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+}
+
+.designer-workspace {
+    display: flex;
+    gap: 1.5rem;
+    flex: 1;
+    min-height: 0;
+}
+
+.designer-sidebar {
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.designer-canvas-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+    border: 2px dashed #cbd5e1;
+    position: relative;
+    overflow: hidden;
+}
+
+.canvas-settings {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    margin: -2.5rem -2.5rem 1rem -2.5rem;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+}
+
+.dimensions-inputs {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.canvas-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    background-image: linear-gradient(45deg, #f1f5f9 25%, transparent 25%), 
+                      linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), 
+                      linear-gradient(45deg, transparent 75%, #f1f5f9 75%), 
+                      linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    border-radius: 12px;
+}
+
+.drop-canvas {
+    background: white;
+    position: relative;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    border: 1px solid #e2e8f0;
+}
+
+.canvas-element {
+    border: 1px dashed transparent;
+    cursor: move;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.canvas-element:hover {
+    border: 1px dashed var(--accent-color);
+}
+
+.canvas-element.selected {
+    border: 2px solid var(--primary-color) !important;
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.draggable-component {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    margin-bottom: 0.75rem;
+    cursor: grab;
+    transition: all 0.2s;
+}
+
+.draggable-component:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+}
+
+.comp-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: white;
+    border-radius: 8px;
+    font-weight: bold;
+    color: var(--primary-color);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.doc-section {
+    margin-top: 2rem;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 1.5rem;
+}
+
+.vars-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.var-item {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    background: #e0e7ff;
+    color: #4338ca;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.mock-barcode {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -2px;
+}
+
+.mock-barcode-text {
+    font-size: 0.7rem;
+    font-weight: normal;
+    letter-spacing: 0;
+    margin-top: 4px;
+}
+
+.mock-qrcode {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+        45deg,
+        #333,
+        #333 5px,
+        #fff 5px,
+        #fff 10px
+    );
+    border: 2px solid #333;
+}
+
+.mock-qrcode-text {
+    background: white;
+    padding: 2px;
+    font-size: 0.6rem;
+    text-align: center;
+}
+
+.toast-message {
+    position: fixed;
+    bottom: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #10b981;
+    color: white;
+    padding: 1rem 2.5rem;
+    border-radius: 30px;
+    font-weight: 600;
+    box-shadow: 0 10px 25px rgba(16, 185, 129, 0.4);
+    transition: bottom 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    z-index: 1000;
+}
+
+.toast-message.show {
+    bottom: 40px;
+}

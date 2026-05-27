@@ -21,14 +21,29 @@ export const ConfigProvider = ({ children }) => {
                     setParams(paramObj);
                 }
                 
-                const schemaResult = await fetchApi('/design?scrid=101'); 
-                if (schemaResult.success && schemaResult.data) {
-                    const parsedFields = schemaResult.data.map(f => ({
-                        ...f,
-                        GuideMappingJSON: f.GuideMappingJSON ? JSON.parse(f.GuideMappingJSON) : []
-                    }));
-                    setFormSchema({ screens: [{ key: 'malKabul', fields: parsedFields }] });
+                const schemaResult101 = await fetchApi('/design?scrid=101');
+                const schemaResult102 = await fetchApi('/design?scrid=102');
+                
+                const screens = [];
+                if (schemaResult101.success && schemaResult101.data) {
+                    screens.push({
+                        key: 'malKabul',
+                        fields: schemaResult101.data.map(f => ({
+                            ...f,
+                            GuideMappingJSON: f.GuideMappingJSON ? JSON.parse(f.GuideMappingJSON) : []
+                        }))
+                    });
                 }
+                if (schemaResult102.success && schemaResult102.data) {
+                    screens.push({
+                        key: 'poMalKabul',
+                        fields: schemaResult102.data.map(f => ({
+                            ...f,
+                            GuideMappingJSON: f.GuideMappingJSON ? JSON.parse(f.GuideMappingJSON) : []
+                        }))
+                    });
+                }
+                setFormSchema({ screens });
             } catch (err) {
                 console.error('Veriler yüklenemedi:', err);
             }

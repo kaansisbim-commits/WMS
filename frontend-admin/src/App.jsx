@@ -1,14 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import UserManagement from './pages/UserManagement';
 import FormDesigner from './pages/FormDesigner';
 import SystemParameters from './pages/SystemParameters';
 import IntegrationMonitor from './pages/IntegrationMonitor';
+import LabelDesigner from './pages/LabelDesigner';
+import PrinterSettings from './pages/PrinterSettings';
 import './App.css';
 
 const App = () => {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [screensOpen, setScreensOpen] = useState(true);
+    const [params, setParams] = useState({});
+
+    useEffect(() => {
+        if (!isLoggedIn) return;
+        const host = window.location.hostname;
+        fetch(`http://${host}:8080/api/wms/parameters`, {
+            headers: { 'Authorization': 'Bearer Admin123Token' }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && Array.isArray(data.data)) {
+                const paramObj = {};
+                data.data.forEach(p => {
+                    paramObj[p.key] = p.value;
+                });
+                setParams(paramObj);
+            }
+        })
+        .catch(err => console.error('Parametreler yüklenemedi:', err));
+    }, [isLoggedIn]);
     
     const handleLogin = async (u, p) => {
         const host = window.location.hostname;
@@ -75,6 +97,12 @@ const App = () => {
                         <NavLink to="/monitor" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                             <span style={{ fontSize: '1.2rem', marginRight: '12px' }}>📡</span> Aktarım İzleme
                         </NavLink>
+                        <NavLink to="/labels" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <span style={{ fontSize: '1.2rem', marginRight: '12px' }}>🏷️</span> Etiket Tasarımı
+                        </NavLink>
+                        <NavLink to="/printers" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <span style={{ fontSize: '1.2rem', marginRight: '12px' }}>🖨️</span> Yazıcı Tanımlamaları
+                        </NavLink>
 
                         <div 
                             className={`nav-group-header ${screensOpen ? 'open' : ''}`} 
@@ -85,8 +113,39 @@ const App = () => {
                         </div>
                         
                         <div className={`submenu ${screensOpen ? 'open' : ''}`}>
-                            <NavLink to="/designer" className={({ isActive }) => `nav-item submenu-item ${isActive ? 'active' : ''}`}>
-                                <span style={{ fontSize: '1.1rem', marginRight: '12px' }}>🏗️</span> Mal Kabul
+                            <NavLink 
+                                to="/designer?scrid=101" 
+                                className={({ isActive }) => {
+                                    const searchParams = new URLSearchParams(window.location.search);
+                                    const is101 = searchParams.get('scrid') === '101' || !searchParams.get('scrid');
+                                    return `nav-item submenu-item ${isActive && is101 ? 'active' : ''}`;
+                                }}
+                            >
+                                <span style={{ fontSize: '1.1rem', marginRight: '12px' }}>🏗️</span> Doğrudan Mal Kabul
+                            </NavLink>
+
+                            {(params.SIPBAGMALKABUL == 1 || params.SIPBAGMALKABUL === true) && (
+                                <NavLink 
+                                    to="/designer?scrid=102" 
+                                    className={({ isActive }) => {
+                                        const searchParams = new URLSearchParams(window.location.search);
+                                        const is102 = searchParams.get('scrid') === '102';
+                                        return `nav-item submenu-item ${isActive && is102 ? 'active' : ''}`;
+                                    }}
+                                >
+                                    <span style={{ fontSize: '1.1rem', marginRight: '12px' }}>📦</span> Siparişe Bağlı Mal Kabul
+                                </NavLink>
+                            )}
+
+                            <NavLink 
+                                to="/designer?scrid=201" 
+                                className={({ isActive }) => {
+                                    const searchParams = new URLSearchParams(window.location.search);
+                                    const is201 = searchParams.get('scrid') === '201';
+                                    return `nav-item submenu-item ${isActive && is201 ? 'active' : ''}`;
+                                }}
+                            >
+                                <span style={{ fontSize: '1.1rem', marginRight: '12px' }}>🔄</span> Depolar Arası Transfer
                             </NavLink>
                         </div>
                     </nav>
@@ -102,6 +161,8 @@ const App = () => {
                         <Route path="/designer" element={<FormDesigner />} />
                         <Route path="/parameters" element={<SystemParameters />} />
                         <Route path="/monitor" element={<IntegrationMonitor />} />
+                        <Route path="/labels" element={<LabelDesigner />} />
+                        <Route path="/printers" element={<PrinterSettings />} />
                         <Route path="/" element={<Navigate to="/users" />} />
                     </Routes>
                 </main>

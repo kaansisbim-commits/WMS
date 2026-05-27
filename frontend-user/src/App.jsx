@@ -4,6 +4,11 @@ import { ConfigProvider, useConfig } from './context/ConfigContext';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import MalKabul from './pages/MalKabul';
+import POMalKabul from './pages/POMalKabul';
+import MalKabulOnay from './pages/MalKabulOnay';
+import MalKabulIptal from './pages/MalKabulIptal';
+import Transfer201 from './pages/Transfer201';
+import BakiyeSorgulama from './pages/BakiyeSorgulama';
 import './index.css';
 
 const MainApp = () => {
@@ -79,7 +84,32 @@ const MainApp = () => {
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/mal-kabul" element={
                                 user.role === 'admin' || user.permissions?.includes('mal-kabul') 
-                                    ? <MalKabul /> 
+                                    ? <MalKabul screenCode="101" /> 
+                                    : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
+                            } />
+                            <Route path="/siparisli-mal-kabul" element={
+                                user.role === 'admin' || user.permissions?.includes('siparisli-mal-kabul') 
+                                    ? <POMalKabul /> 
+                                    : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
+                            } />
+                            <Route path="/mal-kabul-onay" element={
+                                user.role === 'admin' || user.permissions?.includes('mal-kabul-onay') 
+                                    ? <MalKabulOnay /> 
+                                    : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
+                            } />
+                            <Route path="/mal-kabul-iptal" element={
+                                user.role === 'admin' || user.permissions?.includes('mal-kabul-iptal')
+                                    ? <MalKabulIptal /> 
+                                    : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
+                            } />
+                            <Route path="/transfer/depolar-arasi" element={
+                                user.role === 'admin' || user.permissions?.includes('transfer-islemleri')
+                                    ? <Transfer201 screenCode="201" /> 
+                                    : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
+                            } />
+                            <Route path="/raporlar/bakiye-sorgulama" element={
+                                user.role === 'admin' || user.permissions?.includes('raporlar')
+                                    ? <BakiyeSorgulama /> 
                                     : <div style={{padding:'2rem', textAlign:'center'}}>Bu ekrana yetkiniz yok.</div>
                             } />
                             <Route path="*" element={<div>404 - Sayfa Bulunamadı</div>} />

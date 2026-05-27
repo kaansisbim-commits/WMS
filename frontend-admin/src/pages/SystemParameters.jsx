@@ -9,6 +9,10 @@ const SystemParameters = () => {
     const [connectionStatus, setConnectionStatus] = useState('idle'); // idle, loading, success, error
     const [testError, setTestError] = useState('');
 
+    // Save States
+    const [saveStatus, setSaveStatus] = useState({ message: '', type: '' }); // type: 'success', 'error', 'info'
+    const [saving, setSaving] = useState(false);
+
     useEffect(() => {
         const host = window.location.hostname;
         fetch(`http://${host}:8080/api/wms/parameters`, {
@@ -60,6 +64,8 @@ const SystemParameters = () => {
     };
 
     const handleSave = () => {
+        setSaving(true);
+        setSaveStatus({ message: 'Sistem parametreleri kaydediliyor...', type: 'info' });
         const host = window.location.hostname;
         fetch(`http://${host}:8080/api/wms/parameters`, {
             method: 'POST',
@@ -71,10 +77,19 @@ const SystemParameters = () => {
         })
             .then(res => res.json())
             .then(res => {
-                if (res.success) alert('Sistem parametreleri MSSQL veritabanına başarıyla kaydedildi!');
-                else alert('Hata: ' + res.message);
+                if (res.success) {
+                    setSaveStatus({ message: 'Sistem parametreleri MSSQL veritabanına başarıyla kaydedildi!', type: 'success' });
+                    setTimeout(() => setSaveStatus({ message: '', type: '' }), 4000);
+                } else {
+                    setSaveStatus({ message: 'Hata: ' + res.message, type: 'error' });
+                }
             })
-            .catch(err => alert('Bağlantı hatası: ' + err.message));
+            .catch(err => {
+                setSaveStatus({ message: 'Bağlantı hatası: ' + err.message, type: 'error' });
+            })
+            .finally(() => {
+                setSaving(false);
+            });
     };
 
     if (loading) return <div>Yükleniyor...</div>;
@@ -158,8 +173,58 @@ const SystemParameters = () => {
                     )}
                 </div>
 
-                <button className="btn btn-primary" style={{ width: '100%', marginTop: '3rem', height: '4rem', fontSize: '1.2rem' }} onClick={handleSave}>
-                    Değişiklikleri Veritabanına Kaydet
+                {saveStatus.message && (
+                    <div style={{
+                        marginTop: '2rem',
+                        padding: '1rem 1.5rem',
+                        borderRadius: '12px',
+                        backgroundColor: saveStatus.type === 'success' ? '#dcfce7' : saveStatus.type === 'error' ? '#fee2e2' : '#e0f2fe',
+                        color: saveStatus.type === 'success' ? '#166534' : saveStatus.type === 'error' ? '#991b1b' : '#075985',
+                        border: `1px solid ${saveStatus.type === 'success' ? '#bbf7d0' : saveStatus.type === 'error' ? '#fecaca' : '#bae6fd'}`,
+                        fontWeight: '600',
+                        fontSize: '1rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>{saveStatus.type === 'success' ? '✅' : saveStatus.type === 'error' ? '❌' : 'ℹ️'}</span>
+                            <span>{saveStatus.message}</span>
+                        </div>
+                        <button 
+                            onClick={() => setSaveStatus({ message: '', type: '' })} 
+                            style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                cursor: 'pointer', 
+                                fontWeight: 'bold', 
+                                color: 'inherit',
+                                fontSize: '1.2rem',
+                                padding: '0 4px',
+                                display: 'flex',
+                                alignItems: 'center'
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
+
+                <button 
+                    className="btn btn-primary" 
+                    style={{ 
+                        width: '100%', 
+                        marginTop: '3rem', 
+                        height: '4rem', 
+                        fontSize: '1.2rem',
+                        opacity: saving ? 0.7 : 1,
+                        cursor: saving ? 'wait' : 'pointer'
+                    }} 
+                    onClick={handleSave}
+                    disabled={saving}
+                >
+                    {saving ? '⏳ Kaydediliyor...' : 'Değişiklikleri Veritabanına Kaydet'}
                 </button>
             </div>
         </div>

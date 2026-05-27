@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 const FormDesigner = () => {
+    const [searchParams] = useSearchParams();
+    const scrid = parseInt(searchParams.get('scrid') || '101');
+
     const [fields, setFields] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [scrid] = useState(101); // Numeric SCRID for Mal Kabul
 
     const [editingField, setEditingField] = useState(null);
 
     useEffect(() => {
         fetchDesign();
-    }, []);
+    }, [scrid]);
 
     const fetchDesign = () => {
         const host = window.location.hostname;

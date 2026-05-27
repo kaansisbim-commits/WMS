@@ -12,6 +12,23 @@ const IntegrationMonitor = () => {
     const [totalCount, setTotalCount] = useState(0);
     const [statusFilter, setStatusFilter] = useState('all');
 
+    // Modal & Copy States
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedErrorText, setSelectedErrorText] = useState('');
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        if (!selectedErrorText) return;
+        navigator.clipboard.writeText(selectedErrorText)
+            .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            })
+            .catch(err => {
+                alert('Kopyalama başarısız: ' + err.message);
+            });
+    };
+
     const fetchLogs = (p = page, f = statusFilter) => {
         setLoading(true);
         const host = window.location.hostname;
@@ -85,6 +102,8 @@ const IntegrationMonitor = () => {
                 return <span style={{ padding: '6px 12px', borderRadius: '20px', background: '#dcfce7', color: '#166534', fontWeight: 'bold', fontSize: '0.85rem' }}>Başarılı</span>;
             case 2:
                 return <span style={{ padding: '6px 12px', borderRadius: '20px', background: '#fee2e2', color: '#991b1b', fontWeight: 'bold', fontSize: '0.85rem' }}>Hatalı</span>;
+            case 4:
+                return <span style={{ padding: '6px 12px', borderRadius: '20px', background: '#e0e7ff', color: '#4338ca', fontWeight: 'bold', fontSize: '0.85rem' }}>Onay Bekliyor</span>;
             default:
                 return <span style={{ padding: '6px 12px', borderRadius: '20px', background: '#e2e8f0', color: '#475569', fontWeight: 'bold', fontSize: '0.85rem' }}>Bilinmiyor</span>;
         }
@@ -98,6 +117,28 @@ const IntegrationMonitor = () => {
 
     return (
         <div className="parameters-page">
+            {/* Custom Interactive Styles */}
+            <style>{`
+                .clickable-error-cell {
+                    transition: background-color 0.2s ease, transform 0.1s ease !important;
+                }
+                .clickable-error-cell:hover {
+                    background-color: #fee2e2 !important;
+                }
+                .clickable-error-cell:hover .clickable-error-text {
+                    color: #b91c1c !important;
+                    text-decoration: underline;
+                }
+                
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes slideUp {
+                    from { transform: translateY(20px); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+            `}</style>
             <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                     <h1 className="brand-text page-title">Aktarım İzleme</h1>
@@ -161,9 +202,25 @@ const IntegrationMonitor = () => {
                                             <td style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #e2e8f0' }}>
                                                 {getStatusBadge(log.IntegrationStatus)}
                                             </td>
-                                            <td style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', maxWidth: '300px' }}>
+                                            <td 
+                                                onClick={() => {
+                                                    if (log.IntegrationErrorDesc) {
+                                                        setSelectedErrorText(log.IntegrationErrorDesc);
+                                                        setIsModalOpen(true);
+                                                        setCopied(false);
+                                                    }
+                                                }}
+                                                className={log.IntegrationErrorDesc ? "clickable-error-cell" : ""}
+                                                style={{ 
+                                                    padding: '12px', 
+                                                    borderBottom: '1px solid #e2e8f0', 
+                                                    maxWidth: '300px',
+                                                    cursor: log.IntegrationErrorDesc ? 'pointer' : 'default',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                            >
                                                 {log.IntegrationErrorDesc ? (
-                                                    <div title={log.IntegrationErrorDesc} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#ef4444' }}>
+                                                    <div className="clickable-error-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#ef4444', fontWeight: '500' }}>
                                                         {log.IntegrationErrorDesc}
                                                     </div>
                                                 ) : '-'}
@@ -224,6 +281,179 @@ const IntegrationMonitor = () => {
                     </>
                 )}
             </div>
+
+            {/* Beautiful Hata Detayı Modal */}
+            {isModalOpen && (
+                <div 
+                    onClick={() => setIsModalOpen(false)}
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                        backdropFilter: 'blur(8px)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 1000,
+                        animation: 'fadeIn 0.25s ease-out',
+                        padding: '1rem'
+                    }}
+                >
+                    <div 
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            background: '#ffffff',
+                            borderRadius: '16px',
+                            width: '100%',
+                            maxWidth: '650px',
+                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                            border: '1px solid #e2e8f0',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{ 
+                            padding: '1.25rem 1.5rem', 
+                            borderBottom: '1px solid #f1f5f9', 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            background: '#fafafa'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: '#1e293b', fontFamily: "'Outfit', sans-serif" }}>
+                                    Hata Detayı
+                                </h3>
+                            </div>
+                            <button 
+                                onClick={() => setIsModalOpen(false)}
+                                style={{
+                                    border: 'none',
+                                    background: 'none',
+                                    fontSize: '1.5rem',
+                                    cursor: 'pointer',
+                                    color: '#64748b',
+                                    transition: 'color 0.2s',
+                                    padding: '0.25rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    lineHeight: 1
+                                }}
+                                onMouseEnter={(e) => e.target.style.color = '#ef4444'}
+                                onMouseLeave={(e) => e.target.style.color = '#64748b'}
+                            >
+                                &times;
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div style={{ padding: '1.5rem', flex: 1 }}>
+                            <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '0.75rem', fontWeight: '500' }}>
+                                Sistem tarafından döndürülen detaylı hata mesajı:
+                            </p>
+                            <div style={{
+                                background: '#0f172a',
+                                color: '#38bdf8',
+                                fontFamily: "'Courier New', Courier, monospace",
+                                padding: '1.25rem',
+                                borderRadius: '10px',
+                                fontSize: '0.9rem',
+                                lineHeight: '1.6',
+                                overflowY: 'auto',
+                                maxHeight: '320px',
+                                minHeight: '120px',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                border: '1px solid #334155',
+                                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+                            }}>
+                                {selectedErrorText}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{ 
+                            padding: '1rem 1.5rem', 
+                            borderTop: '1px solid #f1f5f9', 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            background: '#fafafa'
+                        }}>
+                            {/* Copy Button */}
+                            <button
+                                onClick={handleCopy}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.5rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #e2e8f0',
+                                    backgroundColor: copied ? '#dcfce7' : '#ffffff',
+                                    color: copied ? '#166534' : '#475569',
+                                    fontWeight: '600',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.25s ease',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (!copied) {
+                                        e.currentTarget.style.backgroundColor = '#f8fafc';
+                                        e.currentTarget.style.borderColor = '#cbd5e1';
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (!copied) {
+                                        e.currentTarget.style.backgroundColor = '#ffffff';
+                                        e.currentTarget.style.borderColor = '#e2e8f0';
+                                    }
+                                }}
+                            >
+                                {copied ? (
+                                    <>
+                                        <span>✓</span> Kopyalandı!
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>📋</span> Panoya Kopyala
+                                    </>
+                                )}
+                            </button>
+
+                            {/* Close Button */}
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                style={{
+                                    padding: '0.5rem 1.25rem',
+                                    borderRadius: '8px',
+                                    border: 'none',
+                                    backgroundColor: '#0f172a',
+                                    color: '#ffffff',
+                                    fontWeight: '600',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                                }}
+                                onMouseEnter={(e) => e.target.style.filter = 'brightness(1.2)'}
+                                onMouseLeave={(e) => e.target.style.filter = 'none'}
+                            >
+                                Kapat
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

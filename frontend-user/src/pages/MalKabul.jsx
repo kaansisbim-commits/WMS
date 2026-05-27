@@ -3,7 +3,7 @@ import { useConfig } from '../context/ConfigContext';
 import GuideModal from '../components/GuideModal';
 import { fetchApi } from '../utils/api';
 
-const MalKabul = () => {
+const MalKabul = ({ screenCode }) => {
     const { params, formSchema, user } = useConfig();
     const [formData, setFormData] = useState({});
     const [lineItems, setLineItems] = useState([]);
@@ -13,11 +13,21 @@ const MalKabul = () => {
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, message: '', onConfirm: null });
     const [formErrors, setFormErrors] = useState({});
     const inputRefs = useRef({});
+    const pollingRef = useRef(null);
+    const [isLocked, setIsLocked] = useState(false);
+    const [hasJoinedSharedSession, setHasJoinedSharedSession] = useState(false);
+
+    // Print Settings
+    const [availableLabels, setAvailableLabels] = useState([]);
+    const [printers, setPrinters] = useState([]);
+    const [selectedTemplateId, setSelectedTemplateId] = useState(localStorage.getItem('selectedTemplateId') || '');
+    const [selectedPrinterId, setSelectedPrinterId] = useState(localStorage.getItem('selectedPrinterId') || '');
 
     const USER_ID = user?.id; // Login olan kullanıcının ID'si
-    const SCREEN_CODE = '101';
+    const SCREEN_CODE = screenCode || '101';
 
-    const mkScreen = (formSchema?.screens || []).find(s => s.key === 'malKabul');
+    const screenKey = SCREEN_CODE === '102' ? 'poMalKabul' : 'malKabul';
+    const mkScreen = (formSchema?.screens || []).find(s => s.key === screenKey);
     const fields = (mkScreen?.fields || [])
         .filter(f => f.IsVisible)
         .sort((a, b) => a.SortOrder - b.SortOrder);
@@ -33,8 +43,12 @@ const MalKabul = () => {
                 if (res.success && res.draft) {
                     setConfirmModal({
                         isOpen: true,
+                        title: 'Yarım Kalan İşlem',
                         message: "Yarım kalan bir işleminiz var, devam etmek ister misiniz?",
+                        confirmText: 'Evet, Devam Et',
+                        cancelText: 'Hayır, Sil',
                         onConfirm: () => {
+                            setHasJoinedSharedSession(true);
                             setDraftId(res.draft.DraftID);
                             setFormData(JSON.parse(res.draft.HeaderData || '{}'));
                             setLineItems(JSON.parse(res.draft.LineData || '[]'));
@@ -46,9 +60,112 @@ const MalKabul = () => {
             }
         };
         checkDraft();
+
+        // Yazıcı ve Şablonları yükle
+        const loadPrintSettings = async () => {
+            try {
+                const labelRes = await fetchApi(`/labels/available?scrid=${SCREEN_CODE}`);
+                if (labelRes.success) setAvailableLabels(labelRes.data || []);
+                
+                const printerRes = await fetchApi(`/printers?activeOnly=true`);
+                if (printerRes.success) setPrinters(printerRes.data || []);
+            } catch (err) {
+                console.error("Yazıcı/Şablon yükleme hatası:", err);
+            }
+        };
+        loadPrintSettings();
     }, []);
 
+    // 1. Polling (Senkronizasyon) Mekanizması
+    useEffect(() => {
+        const cariKod = formData['10101'] || formData.cariKod || formData._cariKod;
+        const irsaliyeNo = formData['10102'] || formData.irsaliyeNo || formData['1002'];
+
+        if (!cariKod || !irsaliyeNo) return;
+
+        const startPolling = () => {
+            pollingRef.current = setInterval(async () => {
+                try {
+                    const res = await fetchApi(`/drafts/collective?cari=${cariKod}&irsaliye=${irsaliyeNo}`);
+                    
+                    if (res.status === 423 || res.isCompleted) {
+                        clearInterval(pollingRef.current);
+                        setIsLocked(true);
+                        alert("⚠️ Bu belge başka bir kullanıcı tarafından tamamlanmıştır. İşlem yapılamaz.");
+                        return;
+                    }
+
+                    if (res.success && res.drafts) {
+                        const otherUsersDrafts = res.drafts.filter(d => d._ownerUserId !== USER_ID);
+                        
+                        if (!hasJoinedSharedSession && otherUsersDrafts.length > 0 && lineItems.length === 0) {
+                            clearInterval(pollingRef.current);
+                            setConfirmModal({
+                                isOpen: true,
+                                title: 'Ortak Çalışma',
+                                message: "Bu belgenin üzerinde çalışan birisi var. Mevcut çalışmaya katılmak istiyor musunuz?",
+                                confirmText: 'Evet, Katıl',
+                                cancelText: 'İptal Et',
+                                onConfirm: () => {
+                                    setHasJoinedSharedSession(true);
+                                    if (res.sharedHeader) {
+                                        setFormData(prev => ({ ...prev, ...res.sharedHeader }));
+                                    }
+                                    setLineItems(res.drafts);
+                                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                },
+                                onCancel: () => {
+                                    setFormData({});
+                                    setLineItems([]);
+                                }
+                            });
+                            return;
+                        }
+
+                        if (hasJoinedSharedSession || lineItems.length > 0 || otherUsersDrafts.length === 0) {
+                            if (res.sharedHeader && lineItems.length === 0) {
+                                setFormData(prev => ({ ...prev, ...res.sharedHeader }));
+                            }
+                            setLineItems(res.drafts);
+                        }
+                    }
+                } catch (error) {
+                    if (error.status === 423) {
+                        clearInterval(pollingRef.current);
+                        setIsLocked(true);
+                        alert("⚠️ Bu belge başka bir kullanıcı tarafından tamamlanmıştır. İşlem yapılamaz.");
+                    }
+                }
+            }, 2000);
+        };
+
+        startPolling();
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+            }
+        };
+    }, [formData['10101'], formData.cariKod, formData._cariKod, formData['10102'], formData.irsaliyeNo, formData['1002'], hasJoinedSharedSession, lineItems.length]);
+
+    // 7 Saniyelik Otomatik Kapanma (Auto-Dismiss) ve Temizlik Kancası
+    useEffect(() => {
+        let timer;
+        if (status.message && status.type === 'success') {
+            timer = setTimeout(() => {
+                setStatus({ message: '', type: '' });
+            }, 7000);
+        }
+        return () => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        };
+    }, [status]);
+
     const saveDraftToDB = async (currentHeader, currentLines) => {
+        const myLines = currentLines.filter(l => l._ownerUserId === USER_ID);
         try {
             await fetchApi('/drafts/save', {
                 method: 'POST',
@@ -57,7 +174,7 @@ const MalKabul = () => {
                     userId: USER_ID,
                     screenCode: SCREEN_CODE,
                     headerData: currentHeader,
-                    lineData: currentLines
+                    lineData: myLines
                 })
             });
         } catch (error) {
@@ -65,7 +182,68 @@ const MalKabul = () => {
         }
     };
 
+    const printLabel = async (lineData) => {
+        if (!selectedTemplateId || !selectedPrinterId) return;
+
+        const printer = printers.find(p => String(p.PrinterID) === String(selectedPrinterId));
+        if (!printer) return;
+
+        try {
+            setStatus({ message: 'Etiket yazdırılıyor...', type: 'info' });
+            
+            // Render template
+            const res = await fetchApi(`/labels/render/${selectedTemplateId}`, {
+                method: 'POST',
+                body: JSON.stringify(lineData)
+            });
+
+            if (res.success && res.data) {
+                setStatus({ message: 'Etiket başarıyla oluşturuldu.', type: 'success' });
+                
+                if (printer.ConnectionMethod === 'LOCAL') {
+                    // Trigger browser print for PDF
+                    const pdfBase64 = res.data.pdfBase64;
+                    if (pdfBase64) {
+                        const byteCharacters = atob(pdfBase64);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        const blob = new Blob([byteArray], {type: 'application/pdf'});
+                        const blobUrl = URL.createObjectURL(blob);
+                        
+                        const iframe = document.createElement('iframe');
+                        iframe.style.display = 'none';
+                        iframe.src = blobUrl;
+                        document.body.appendChild(iframe);
+                        
+                        iframe.onload = () => {
+                            iframe.contentWindow.print();
+                            setTimeout(() => {
+                                document.body.removeChild(iframe);
+                                URL.revokeObjectURL(blobUrl);
+                            }, 60000); // Cleanup after 1 min
+                        };
+                    }
+                } else if (printer.ConnectionMethod === 'NETWORK') {
+                    alert('Ağ yazıcısına yazdırma komutu (ZPL) gönderildi.');
+                }
+            } else {
+                setStatus({ message: 'Etiket oluşturulamadı: ' + res.message, type: 'error' });
+            }
+        } catch (err) {
+            console.error('Yazdırma hatası:', err);
+            setStatus({ message: 'Etiket yazdırma hatası!', type: 'error' });
+        }
+    };
+
     const handleAddLine = () => {
+        if (isLocked) {
+            alert("Bu belge kilitlidir, işlem yapamazsınız.");
+            return;
+        }
+
         // --- DINAMİK FORM VALIDASYONU (HEADER + LINE) ---
         const requiredFields = fields.filter(f => f.IsRequired);
         const newErrors = {};
@@ -81,9 +259,26 @@ const MalKabul = () => {
             }
         }
 
+        // İrsaliye Numarası 15 karakter uzunluğu zorunlu kontrolü
+        fields.forEach(field => {
+            const isIrsaliye = String(field.LabelText).toLowerCase().includes('irsaliye') || field.COMPID === 1002 || field.COMPID === 10102;
+            if (isIrsaliye) {
+                const val = String(formData[field.COMPID] || '').trim();
+                if (val.length !== 15) {
+                    newErrors[field.COMPID] = true;
+                    if (!firstErrorId) firstErrorId = field.COMPID;
+                    if (val.length === 0) {
+                        missingNames.push(`${field.LabelText} (15 Karakter)`);
+                    } else {
+                        missingNames.push(`${field.LabelText} (15 Karakter olmalı, şu an ${val.length})`);
+                    }
+                }
+            }
+        });
+
         if (Object.keys(newErrors).length > 0) {
             setFormErrors(newErrors);
-            setStatus({ message: `Lütfen zorunlu alanları doldurunuz: ${missingNames.join(', ')}`, type: 'error' });
+            setStatus({ message: `Lütfen zorunlu alanları doldurunuz veya düzeltiniz: ${missingNames.join(', ')}`, type: 'error' });
             setTimeout(() => setStatus({ message: '', type: '' }), 5000);
 
             // İlk boş alana odaklan
@@ -100,6 +295,21 @@ const MalKabul = () => {
         lineFields.forEach(f => {
             if (formData[f.COMPID] !== undefined && formData[f.COMPID] !== '') {
                 lineDataToSave[f.COMPID] = formData[f.COMPID];
+                
+                // Dost isimleri de ekle (Etiket Şablonu eşleşmesi için)
+                if (f.LabelText === 'Seri No') {
+                    lineDataToSave['SeriNo'] = formData[f.COMPID];
+                } else if (f.LabelText === 'Stok Kodu' || f.LabelText.includes('Ürün Seçimi')) {
+                    lineDataToSave['StokKodu'] = formData[f.COMPID];
+                    lineDataToSave['UrunKodu'] = formData[f.COMPID];
+                } else if (f.LabelText === 'Stok Adı' || f.LabelText.includes('Ürün Adı')) {
+                    lineDataToSave['StokAdi'] = formData[f.COMPID];
+                    lineDataToSave['UrunAdi'] = formData[f.COMPID];
+                } else if (f.LabelText === 'Miktar') {
+                    lineDataToSave['Miktar'] = formData[f.COMPID];
+                } else if (f.LabelText === 'Birim') {
+                    lineDataToSave['Birim'] = formData[f.COMPID];
+                }
             }
         });
 
@@ -117,6 +327,8 @@ const MalKabul = () => {
             return;
         }
 
+        lineDataToSave._ownerUserId = USER_ID;
+
         const newLineItems = [...lineItems, lineDataToSave];
         setLineItems(newLineItems);
 
@@ -128,6 +340,9 @@ const MalKabul = () => {
 
         // Backend'e taslak olarak asenkron kaydet
         saveDraftToDB(currentHeader, newLineItems);
+
+        // Satır eklenir eklenmez etiket yazdır
+        printLabel(lineDataToSave);
 
         // Satır (Line) alanlarını formdan temizle
         setFormData(prev => {
@@ -169,7 +384,7 @@ const MalKabul = () => {
         if (field.ComponentType !== 'GUIDE') return;
 
         try {
-            const res = await fetchApi(`/dynamic-query?scrid=101&compid=${field.COMPID}`);
+            const res = await fetchApi(`/dynamic-query?scrid=${SCREEN_CODE}&compid=${field.COMPID}`);
             if (res.success) {
                 setModalConfig({
                     isOpen: true,
@@ -249,6 +464,63 @@ const MalKabul = () => {
         }
     };
 
+    const handleIrsaliyeBlur = (field, e) => {
+        const value = e.target.value;
+        const relatedTarget = e.relatedTarget;
+        
+        // Yenile butonuna basıldıysa odağı kilitleme (kullanıcının iptal etmesine izin ver)
+        if (relatedTarget && (
+            relatedTarget.innerText?.includes('Yenile') || 
+            relatedTarget.textContent?.includes('Yenile') ||
+            (relatedTarget.getAttribute && relatedTarget.getAttribute('type') === 'button')
+        )) {
+            return;
+        }
+
+        const val = String(value || '').trim();
+        if (val.length !== 15) {
+            setFormErrors(prev => ({ ...prev, [field.COMPID]: true }));
+            setStatus({ 
+                message: val.length === 0 
+                    ? `${field.LabelText} alanı zorunludur ve 15 karakter olmalıdır!` 
+                    : `${field.LabelText} tam olarak 15 karakter olmalıdır! (Girilen: ${val.length})`, 
+                type: 'error' 
+            });
+            
+            setTimeout(() => {
+                if (inputRefs.current[field.COMPID]) {
+                    inputRefs.current[field.COMPID].focus();
+                }
+            }, 10);
+        } else {
+            setStatus({ message: '', type: '' });
+            setFormErrors(prev => {
+                const next = { ...prev };
+                delete next[field.COMPID];
+                return next;
+            });
+        }
+    };
+
+    const handleIrsaliyeKeyDown = (field, e) => {
+        if (e.key === 'Enter' || e.key === 'Tab') {
+            const val = String(e.target.value || '').trim();
+            if (val.length !== 15) {
+                e.preventDefault();
+                setFormErrors(prev => ({ ...prev, [field.COMPID]: true }));
+                setStatus({ 
+                    message: val.length === 0 
+                        ? `${field.LabelText} alanı zorunludur ve 15 karakter olmalıdır!` 
+                        : `${field.LabelText} tam olarak 15 karakter olmalıdır! (Girilen: ${val.length})`, 
+                    type: 'error' 
+                });
+                if (inputRefs.current[field.COMPID]) {
+                    inputRefs.current[field.COMPID].focus();
+                }
+            }
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -257,6 +529,31 @@ const MalKabul = () => {
             alert("Lütfen en az bir kalem ekleyiniz.");
             return;
         }
+
+        // İrsaliye Numarası final kontrolü (15 karakter)
+        let irsaliyeError = false;
+        headerFields.forEach(field => {
+            const isIrsaliye = String(field.LabelText).toLowerCase().includes('irsaliye') || field.COMPID === 1002 || field.COMPID === 10102;
+            if (isIrsaliye) {
+                const val = String(formData[field.COMPID] || '').trim();
+                if (val.length !== 15) {
+                    irsaliyeError = true;
+                    setFormErrors(prev => ({ ...prev, [field.COMPID]: true }));
+                    setStatus({ 
+                        message: val.length === 0 
+                            ? `${field.LabelText} alanı zorunludur ve 15 karakter olmalıdır!` 
+                            : `${field.LabelText} tam olarak 15 karakter olmalıdır! (Girilen: ${val.length})`, 
+                        type: 'error' 
+                    });
+                    setTimeout(() => setStatus({ message: '', type: '' }), 5000);
+                    if (inputRefs.current[field.COMPID]) {
+                        inputRefs.current[field.COMPID].focus();
+                    }
+                }
+            }
+        });
+
+        if (irsaliyeError) return;
 
         const currentHeader = {};
         headerFields.forEach(f => {
@@ -267,7 +564,9 @@ const MalKabul = () => {
             header: currentHeader,
             lines: lineItems,
             userId: user?.id,
-            username: user?.name || user?.username || 'Admin'
+            username: user?.name || user?.username || 'Admin',
+            templateId: selectedTemplateId || null,
+            printerId: selectedPrinterId || null
         };
 
         console.log('Final Data to WMS/NetOpenX:', payload);
@@ -283,8 +582,6 @@ const MalKabul = () => {
                 fetchApi('/integration/send-to-netsis', { method: 'POST', body: JSON.stringify({ receiptId: res.receiptId }) })
                     .catch(err => console.error("Anında Netsis aktarımı tetiklenemedi:", err));
             }
-
-            setTimeout(() => setStatus({ message: '', type: '' }), 3000);
 
             // Clear everything after success
             setFormData({});
@@ -313,7 +610,7 @@ const MalKabul = () => {
                         className="form-input"
                         style={combinedStyle}
                         readOnly
-                        disabled={disabled}
+                        disabled={disabled || isLocked}
                         placeholder={field.LabelText + ' seçin...'}
                         value={formData[field.COMPID] || ''}
                         onClick={() => !disabled && handleOpenGuide(field)}
@@ -322,6 +619,9 @@ const MalKabul = () => {
                 </div>
             );
         }
+
+        const isIrsaliyeField = String(field.LabelText).toLowerCase().includes('irsaliye') || field.COMPID === 1002 || field.COMPID === 10102;
+
         return (
             <input
                 key={field.COMPID}
@@ -332,9 +632,11 @@ const MalKabul = () => {
                 maxLength={field.MaxLength}
                 value={formData[field.COMPID] || field.DefaultValue || ''}
                 onChange={(e) => handleChange(field.COMPID, e.target.value)}
-                readOnly={field.ComponentType === 'READONLY'}
-                disabled={disabled}
-                style={combinedStyle}
+                onBlur={isIrsaliyeField ? (e) => handleIrsaliyeBlur(field, e) : undefined}
+                onKeyDown={isIrsaliyeField ? (e) => handleIrsaliyeKeyDown(field, e) : undefined}
+                readOnly={field.ComponentType === 'READONLY' || isLocked}
+                disabled={disabled || isLocked}
+                style={{ ...combinedStyle, ...(isLocked ? { background: '#e2e8f0', color: '#64748b', cursor: 'not-allowed', opacity: 0.8 } : {}) }}
             />
         );
     };
@@ -376,9 +678,41 @@ const MalKabul = () => {
                 <span>🔄</span> Yenile
             </button>
 
-            {status.message && (
-                <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '8px', backgroundColor: status.type === 'success' ? '#dcfce7' : '#fee2e2', color: status.type === 'success' ? '#166534' : '#991b1b', fontWeight: '600', textAlign: 'center' }}>
+            {/* Status Alert (Sadece hata ve bilgi mesajları için) */}
+            {status.message && status.type !== 'success' && (
+                <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '8px', backgroundColor: status.type === 'error' ? '#fee2e2' : '#e0f2fe', color: status.type === 'error' ? '#991b1b' : '#075985', fontWeight: '600', textAlign: 'center' }}>
                     {status.message}
+                </div>
+            )}
+
+            {/* Başarı Mesajı - Alt Bildirim (Fixed Bottom) & 7 Saniye Kuralı */}
+            {status.message && status.type === 'success' && (
+                <div
+                    className="fixed bottom-10 left-half -translate-x-half z-50 success-toast"
+                    style={{
+                        position: 'fixed',
+                        bottom: '2.5rem',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 10000,
+                        padding: '1rem 1.5rem',
+                        borderRadius: '12px',
+                        backgroundColor: '#dcfce7',
+                        color: '#14532d',
+                        fontWeight: '600',
+                        textAlign: 'center',
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(34, 197, 94, 0.2)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        minWidth: '320px',
+                        maxWidth: '90%',
+                        justifyContent: 'center',
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    <span style={{ fontSize: '1.25rem' }}>✅</span>
+                    <span>{status.message}</span>
                 </div>
             )}
 
@@ -397,6 +731,40 @@ const MalKabul = () => {
                                 {renderField(field, lineItems.length > 0)}
                             </div>
                         ))}
+                        
+                        {/* Print Settings (Etiket & Yazıcı) */}
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Etiket Dizaynı</label>
+                            <select 
+                                className="form-input" 
+                                value={selectedTemplateId} 
+                                onChange={(e) => {
+                                    setSelectedTemplateId(e.target.value);
+                                    localStorage.setItem('selectedTemplateId', e.target.value);
+                                }}
+                            >
+                                <option value="">Şablon Seçiniz</option>
+                                {availableLabels.map(l => (
+                                    <option key={l.TemplateID} value={l.TemplateID}>{l.TemplateName}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Hedef Yazıcı</label>
+                            <select 
+                                className="form-input" 
+                                value={selectedPrinterId} 
+                                onChange={(e) => {
+                                    setSelectedPrinterId(e.target.value);
+                                    localStorage.setItem('selectedPrinterId', e.target.value);
+                                }}
+                            >
+                                <option value="">Yazıcı Seçiniz</option>
+                                {printers.map(p => (
+                                    <option key={p.PrinterID} value={p.PrinterID}>{p.PrinterName}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -500,6 +868,7 @@ const MalKabul = () => {
                                                 boxShadow: '-2px 0 5px rgba(0,0,0,0.05)', // Hafif gölge ile üstte kaldığını belli et
                                                 zIndex: 5
                                             }}>
+                                                {item._ownerUserId === USER_ID && !isLocked && (
                                                 <button
                                                     type="button"
                                                     onClick={() => handleRemoveLine(index)}
@@ -523,6 +892,7 @@ const MalKabul = () => {
                                                         <line x1="14" y1="11" x2="14" y2="17"></line>
                                                     </svg>
                                                 </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -556,7 +926,7 @@ const MalKabul = () => {
                         </div>
 
                         <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                            <button onClick={handleSubmit} className="btn btn-primary" style={{ padding: '0.75rem', fontSize: '1.1rem', width: '100%' }}>
+                            <button disabled={isLocked} onClick={handleSubmit} className="btn btn-primary" style={{ padding: '0.75rem', fontSize: '1.1rem', width: '100%', opacity: isLocked ? 0.5 : 1, cursor: isLocked ? 'not-allowed' : 'pointer' }}>
                                 Netsis'e Gönder
                             </button>
                         </div>
@@ -585,15 +955,22 @@ const MalKabul = () => {
                                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
                             </svg>
                         </div>
-                        <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: '#0f172a' }}>Onay Gerekiyor</h3>
+                        <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: '#0f172a' }}>{confirmModal.title || 'Onay Gerekiyor'}</h3>
                         <p style={{ color: '#64748b', marginBottom: '1.5rem', fontSize: '0.95rem' }}>{confirmModal.message}</p>
                         <div style={{ display: 'flex', gap: '0.75rem' }}>
                             <button
-                                onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                                onClick={() => {
+                                    if (confirmModal.onCancel) {
+                                        confirmModal.onCancel();
+                                    } else {
+                                        // Default delete fallback logic if needed
+                                    }
+                                    setConfirmModal({ ...confirmModal, isOpen: false });
+                                }}
                                 className="btn btn-secondary"
                                 style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', fontWeight: 'bold' }}
                             >
-                                İptal
+                                {confirmModal.cancelText || 'İptal'}
                             </button>
                             <button
                                 onClick={() => {
@@ -603,7 +980,7 @@ const MalKabul = () => {
                                 className="btn btn-primary"
                                 style={{ flex: 1, backgroundColor: '#ef4444', color: 'white', fontWeight: 'bold', border: 'none' }}
                             >
-                                Onayla
+                                {confirmModal.confirmText || 'Onayla'}
                             </button>
                         </div>
                     </div>
